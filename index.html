@@ -1,0 +1,595 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Image Copyright Checker</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg: #ffffff; --bg2: #f5f5f3; --bg3: #eeede9;
+    --text: #1a1a18; --text2: #5a5a56; --text3: #9a9a94;
+    --border: rgba(0,0,0,0.1); --border2: rgba(0,0,0,0.18);
+    --green-bg: #eaf3de; --green-text: #3b6d11;
+    --yellow-bg: #faeeda; --yellow-text: #854f0b;
+    --red-bg: #fcebeb; --red-text: #a32d2d;
+    --blue-bg: #e6f1fb; --blue-text: #185fa5;
+    --radius: 8px; --radius-lg: 12px;
+    --font: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    --mono: 'Menlo', 'Consolas', monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #1e1e1c; --bg2: #2a2a28; --bg3: #323230;
+      --text: #e8e8e4; --text2: #a8a8a2; --text3: #686864;
+      --border: rgba(255,255,255,0.1); --border2: rgba(255,255,255,0.18);
+      --green-bg: #173404; --green-text: #c0dd97;
+      --yellow-bg: #412402; --yellow-text: #fac775;
+      --red-bg: #501313; --red-text: #f7c1c1;
+      --blue-bg: #042c53; --blue-text: #b5d4f4;
+    }
+  }
+  body { font-family: var(--font); background: var(--bg3); color: var(--text); min-height: 100vh; }
+  .page { max-width: 820px; margin: 0 auto; padding: 2rem 1.25rem 4rem; }
+  header { margin-bottom: 2rem; }
+  h1 { font-size: 22px; font-weight: 500; color: var(--text); margin-bottom: 4px; }
+  .subtitle { font-size: 13px; color: var(--text2); }
+  .drop-zone { border: 1.5px dashed var(--border2); border-radius: var(--radius-lg); padding: 2.5rem 1.5rem; text-align: center; cursor: pointer; transition: background 0.15s; background: var(--bg2); }
+  .drop-zone:hover, .drop-zone.drag-over { background: var(--blue-bg); border-color: var(--blue-text); }
+  .drop-icon { font-size: 32px; margin-bottom: 0.75rem; }
+  .drop-title { font-size: 15px; font-weight: 500; color: var(--text); margin-bottom: 4px; }
+  .drop-sub { font-size: 12px; color: var(--text2); }
+  #file-input { display: none; }
+  .info-banner { padding: 0.65rem 1rem; background: var(--blue-bg); border-radius: var(--radius); color: var(--blue-text); font-size: 12px; margin-top: 1rem; line-height: 1.6; }
+  .stats-row { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; margin: 1.25rem 0 1rem; }
+  .stat-card { background: var(--bg2); border-radius: var(--radius); padding: 0.75rem 0.85rem; }
+  .stat-label { font-size: 11px; color: var(--text2); margin-bottom: 3px; }
+  .stat-val { font-size: 20px; font-weight: 500; color: var(--text); }
+  .stat-val.ok { color: var(--green-text); }
+  .stat-val.warn { color: var(--yellow-text); }
+  .stat-val.danger { color: var(--red-text); }
+  .stat-val.info { color: var(--blue-text); }
+  .section-label { font-size: 12px; font-weight: 500; color: var(--text2); text-transform: uppercase; letter-spacing: 0.05em; margin: 1.25rem 0 0.65rem; }
+  .slide-group-label { font-size: 12px; font-weight: 500; color: var(--text2); padding: 6px 0 4px; margin-top: 0.5rem; border-top: 0.5px solid var(--border); }
+  .image-card { border: 0.5px solid var(--border); border-radius: var(--radius-lg); padding: 0.9rem 1.1rem; margin-bottom: 0.65rem; background: var(--bg); display: grid; grid-template-columns: 76px 1fr; gap: 0.9rem; align-items: start; }
+  .image-card.status-ok { border-color: var(--green-text); }
+  .image-card.status-bad { border-color: var(--red-text); }
+  .image-card.decorative { opacity: 0.55; }
+  .img-thumb { width: 76px; height: 56px; object-fit: contain; border-radius: var(--radius); border: 0.5px solid var(--border); background: var(--bg2); display: block; }
+  .img-meta { display: flex; flex-direction: column; gap: 4px; }
+  .img-name { font-size: 12px; font-weight: 500; color: var(--text); word-break: break-all; }
+  .img-slide { font-size: 11px; color: var(--text2); }
+  .badge { display: inline-block; font-size: 11px; font-weight: 500; padding: 2px 7px; border-radius: var(--radius); white-space: nowrap; }
+  .badge-ok { background: var(--green-bg); color: var(--green-text); }
+  .badge-warn { background: var(--yellow-bg); color: var(--yellow-text); }
+  .badge-danger { background: var(--red-bg); color: var(--red-text); }
+  .badge-info { background: var(--blue-bg); color: var(--blue-text); }
+  .badge-gray { background: var(--bg2); color: var(--text2); border: 0.5px solid var(--border); }
+  .img-row-actions { display: flex; gap: 5px; align-items: center; flex-wrap: wrap; margin-top: 3px; }
+  .detail-row { font-size: 11px; color: var(--text2); margin-top: 2px; line-height: 1.5; }
+  .alt-text-row { font-size: 11px; color: var(--text3); margin-top: 2px; font-style: italic; }
+  .slide-text-row { font-size: 11px; color: var(--text3); margin-top: 2px; font-style: italic; }
+  .suggestion-box { margin-top: 7px; padding: 7px 9px; background: var(--blue-bg); border-radius: var(--radius); border: 0.5px solid var(--blue-text); }
+  .suggestion-title { font-size: 11px; font-weight: 500; color: var(--blue-text); margin-bottom: 2px; }
+  .suggestion-link { font-size: 11px; color: var(--blue-text); text-decoration: none; display: block; margin-top: 2px; }
+  .suggestion-link:hover { text-decoration: underline; }
+  .wiki-query { font-size: 11px; color: var(--text2); font-style: italic; }
+  .override-row { display: flex; gap: 5px; margin-top: 7px; flex-wrap: wrap; align-items: center; }
+  .override-label { font-size: 11px; color: var(--text3); }
+  .override-btn { font-size: 11px; padding: 3px 9px; border-radius: var(--radius); border: 0.5px solid var(--border2); background: transparent; color: var(--text2); cursor: pointer; font-family: var(--font); }
+  .override-btn:hover { background: var(--bg2); }
+  .override-btn.active-ok { background: var(--green-bg); color: var(--green-text); border-color: var(--green-text); }
+  .filter-row { display: flex; gap: 6px; margin-bottom: 0.85rem; flex-wrap: wrap; }
+  .filter-btn { font-size: 11px; padding: 3px 10px; border-radius: var(--radius); border: 0.5px solid var(--border2); background: transparent; color: var(--text2); cursor: pointer; font-family: var(--font); }
+  .filter-btn:hover { background: var(--bg2); }
+  .filter-btn.active { background: var(--blue-bg); color: var(--blue-text); border-color: var(--blue-text); }
+  .skipped-section { margin-top: 1.5rem; }
+  .skipped-toggle { font-size: 12px; color: var(--text3); cursor: pointer; background: none; border: none; font-family: var(--font); padding: 0; }
+  .skipped-toggle:hover { color: var(--text2); }
+  .skipped-list { margin-top: 0.5rem; display: none; }
+  .skipped-list.open { display: block; }
+  .skipped-item { font-size: 11px; color: var(--text3); padding: 4px 0; border-bottom: 0.5px solid var(--border); display: flex; gap: 8px; align-items: center; }
+  .actions-row { display: flex; gap: 8px; margin-top: 1.5rem; flex-wrap: wrap; }
+  .btn { font-size: 12px; padding: 7px 16px; border-radius: var(--radius); border: 0.5px solid var(--border2); background: transparent; color: var(--text); cursor: pointer; font-family: var(--font); }
+  .btn:hover { background: var(--bg2); }
+  .error-box { padding: 0.75rem 1rem; background: var(--red-bg); border-radius: var(--radius); color: var(--red-text); font-size: 12px; margin-top: 1rem; }
+  .export-area { margin-top: 1rem; }
+  .export-label { font-size: 11px; color: var(--text2); margin-bottom: 5px; }
+  .export-box { width: 100%; min-height: 100px; font-size: 11px; font-family: var(--mono); padding: 7px; border-radius: var(--radius); border: 0.5px solid var(--border2); background: var(--bg2); color: var(--text); resize: vertical; }
+  .copy-btn { margin-top: 5px; font-size: 11px; padding: 4px 12px; border-radius: var(--radius); border: 0.5px solid var(--border2); background: transparent; color: var(--text); cursor: pointer; font-family: var(--font); }
+  .copy-btn:hover { background: var(--bg2); }
+  footer { margin-top: 3rem; font-size: 11px; color: var(--text3); text-align: center; }
+</style>
+</head>
+<body>
+<div class="page">
+  <header>
+    <h1>Image Copyright Checker</h1>
+    <p class="subtitle">Upload a .pptx file to scan all images for copyright status. Runs entirely in your browser — no data is uploaded anywhere.</p>
+  </header>
+
+  <div class="drop-zone" id="dropZone">
+    <div class="drop-icon">📂</div>
+    <div class="drop-title">Drop your PowerPoint here</div>
+    <div class="drop-sub">or click to browse &nbsp;·&nbsp; .pptx files only</div>
+    <input type="file" id="file-input" accept=".pptx">
+  </div>
+
+  <div class="info-banner">
+    Scans filenames, embedded XMP/EXIF metadata, and slide text (including speaker notes) for copyright signals. Images marked decorative or coming from slide masters/layouts are automatically excluded. Use the override buttons on any card to manually classify images the tool cannot detect automatically.
+  </div>
+
+  <div id="error-box" class="error-box" style="display:none;"></div>
+
+  <div id="results-area" style="display:none; margin-top:1.5rem;">
+    <div class="stats-row" id="stats-row"></div>
+    <div class="filter-row" id="filter-row"></div>
+    <div class="section-label">Image analysis — in slide order</div>
+    <div id="cards-container"></div>
+    <div id="skipped-section" class="skipped-section" style="display:none;">
+      <button class="skipped-toggle" id="skipped-toggle">▶ Show skipped images (decorative / slide master)</button>
+      <div class="skipped-list" id="skipped-list"></div>
+    </div>
+    <div class="actions-row">
+      <button class="btn" id="btn-show-csv">Show CSV report</button>
+      <button class="btn" id="btn-show-json">Show JSON</button>
+    </div>
+    <div id="export-csv" class="export-area" style="display:none;">
+      <div class="export-label">CSV — copy and paste into Excel or Google Sheets</div>
+      <textarea class="export-box" id="csv-text" readonly></textarea>
+      <button class="copy-btn" id="copy-csv">Copy to clipboard</button>
+    </div>
+    <div id="export-json" class="export-area" style="display:none;">
+      <div class="export-label">JSON — copy and save as copyright-report.json</div>
+      <textarea class="export-box" id="json-text" readonly></textarea>
+      <button class="copy-btn" id="copy-json">Copy to clipboard</button>
+    </div>
+  </div>
+
+  <footer>Image Copyright Checker &nbsp;·&nbsp; Runs locally in your browser &nbsp;·&nbsp; No data is sent to any server</footer>
+</div>
+
+<script>
+const dropZone = document.getElementById('dropZone');
+const fileInput = document.getElementById('file-input');
+const resultsArea = document.getElementById('results-area');
+const cardsContainer = document.getElementById('cards-container');
+const statsRow = document.getElementById('stats-row');
+const errorBox = document.getElementById('error-box');
+let allResults = [];
+let skippedImages = [];
+
+dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('drag-over'); });
+dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
+dropZone.addEventListener('drop', e => { e.preventDefault(); dropZone.classList.remove('drag-over'); handleFile(e.dataTransfer.files[0]); });
+dropZone.addEventListener('click', () => fileInput.click());
+fileInput.addEventListener('change', e => { if (e.target.files[0]) handleFile(e.target.files[0]); fileInput.value = ''; });
+function showError(msg) { errorBox.textContent = msg; errorBox.style.display = 'block'; }
+function clearError() { errorBox.style.display = 'none'; }
+
+const OVERRIDE_LABELS = {
+  wikimedia: 'Wikimedia Commons (manual)',
+  adobe:     'Adobe Stock (educational license)',
+  ai:        'AI-generated / original',
+  original:  'Instructor-created (original)',
+  licensed:  'Institutionally licensed',
+};
+const OVERRIDE_BTNS = [
+  { type: 'wikimedia', label: 'Wikimedia Commons' },
+  { type: 'adobe',     label: 'Adobe Stock (edu)' },
+  { type: 'ai',        label: 'AI-generated' },
+  { type: 'original',  label: 'Instructor original' },
+  { type: 'licensed',  label: 'Other institutional license' },
+];
+
+const RESTRICTED = [
+  { p: /getty/i,         l: 'Getty Images (commercial)' },
+  { p: /shutterstock/i,  l: 'Shutterstock (commercial)' },
+  { p: /\bistock\b/i,    l: 'iStock (commercial)' },
+  { p: /alamy/i,         l: 'Alamy (commercial)' },
+  { p: /dreamstime/i,    l: 'Dreamstime (commercial)' },
+  { p: /depositphotos/i, l: 'Depositphotos (commercial)' },
+  { p: /\b123rf\b/i,     l: '123RF (commercial)' },
+  { p: /adobe.?stock/i,  l: 'Adobe Stock (verify license)' },
+  { p: /corbis/i,        l: 'Corbis (commercial)' },
+];
+const FREE_FILE = [
+  { p: /wikimedia|wikipedia|wiki_commons/i, l: 'Wikimedia Commons' },
+  { p: /pixabay/i,  l: 'Pixabay' },
+  { p: /unsplash/i, l: 'Unsplash' },
+  { p: /pexels/i,   l: 'Pexels' },
+  { p: /public.?domain|pd_|_pd\b/i, l: 'Public Domain' },
+  { p: /\bcc.?by\b|cc_by/i, l: 'CC BY' },
+  { p: /nasa\.gov|noaa\.gov|usgs\.gov|cdc\.gov/i, l: 'US Government (Public Domain)' },
+];
+const AI_FILE = [/midjourney/i,/dall.?e/i,/stable.?diff/i,/firefly/i,/\bai.?gen/i,/gen.?ai/i,/canva.?ai/i,/ideogram/i,/leonardo.?ai/i];
+const WIKIMEDIA_SLIDE = [/wikimedia\s+commons/i,/commons\.wikimedia\.org/i,/wikipedia\.org/i,/\bwikipedia\b/i,/\bwikimedia\b/i];
+const CC_SLIDE = [
+  { p: /cc0|creative\s+commons\s+zero|public\s+domain\s+dedication/i, l: 'CC0 / Public Domain' },
+  { p: /cc\s+by\s+4\.0|creative\s+commons.*by.*4\.0/i, l: 'CC BY 4.0' },
+  { p: /cc\s+by\s+3\.0/i, l: 'CC BY 3.0' },
+  { p: /cc\s+by.?sa\s+4\.0/i, l: 'CC BY-SA 4.0' },
+  { p: /cc\s+by.?sa\s+3\.0/i, l: 'CC BY-SA 3.0' },
+  { p: /cc\s+by.?nc/i, l: 'CC BY-NC' },
+  { p: /cc\s+by.?nd/i, l: 'CC BY-ND' },
+  { p: /creative\s+commons/i, l: 'Creative Commons' },
+  { p: /creativecommons\.org/i, l: 'Creative Commons' },
+];
+const ADOBE_EDU_PATTERNS = [/adobe\s+stock.*edu/i,/edu.*adobe\s+stock/i,/licensed\s+(via|through|from)\s+adobe/i,/adobe.*educational/i,/educational.*license/i,/adobe\s+express/i];
+const INSTRUCTOR_ORIG = [/original\s+(image|photo|graphic|artwork|illustration)/i,/created\s+by\s+(the\s+)?(author|instructor|faculty|professor)/i,/instructor.?created/i,/faculty.?created/i,/own\s+(image|photo|work|creation)/i];
+
+function analyzeFilename(name) {
+  for (const p of RESTRICTED) if (p.p.test(name)) return { status: 'bad', license: p.l, reason: 'Filename matches commercial stock agency: ' + p.l };
+  for (const p of FREE_FILE) if (p.p.test(name)) return { status: 'ok', license: p.l, reason: 'Filename suggests free/open source: ' + p.l };
+  for (const p of AI_FILE) if (p.test(name)) return { status: 'ok', license: 'AI-generated (filename)', reason: 'Filename suggests AI-generated image' };
+  if (/[-_](\d{7,12})[-_.]/.test(name)) return { status: 'warn', license: 'Unknown — possible stock', reason: 'Long numeric ID in filename (common stock image pattern)' };
+  if (/screenshot|screen.?shot/i.test(name)) return { status: 'warn', license: 'Screenshot — unknown origin', reason: 'Filename suggests a screenshot; original source is unknown' };
+  if (/^(img_?|image_?|photo_?|pic_?|dsc_?|dscn_?|_mg_|p\d{4})/i.test(name)) return { status: 'warn', license: 'Unknown — generic filename', reason: 'Generic camera/auto-generated filename; origin unknown' };
+  return { status: 'warn', license: 'Unknown', reason: 'No copyright indicators found in filename' };
+}
+
+function checkSlideText(text) {
+  if (!text) return null;
+  for (const p of ADOBE_EDU_PATTERNS) if (p.test(text)) return { status: 'ok', license: 'Adobe Stock (educational license)', reason: 'Slide text indicates Adobe Stock educational license' };
+  for (const p of INSTRUCTOR_ORIG) if (p.test(text)) return { status: 'ok', license: 'Instructor-created (original)', reason: 'Slide text indicates original instructor-created content' };
+  const foundWiki = WIKIMEDIA_SLIDE.some(p => p.test(text));
+  let foundCC = null;
+  for (const c of CC_SLIDE) { if (c.p.test(text)) { foundCC = c.l; break; } }
+  if (foundWiki && foundCC) return { status: 'ok', license: foundCC + ' (Wikimedia Commons)', reason: 'Slide text: Wikimedia Commons + ' + foundCC };
+  if (foundWiki) return { status: 'ok', license: 'Wikimedia Commons', reason: 'Slide text references Wikimedia Commons or Wikipedia' };
+  if (foundCC) { const free = /cc0|public domain|cc by[^-]|cc by 4|cc by 3|cc by-sa/i.test(foundCC); return { status: free ? 'ok' : 'warn', license: foundCC, reason: 'Slide text contains CC license: ' + foundCC }; }
+  for (const p of AI_FILE) if (p.test(text)) return { status: 'ok', license: 'AI-generated', reason: 'Slide text references AI generation tool' };
+  if (/\bai.?generated\b|\bgenerated\s+(by|with|using)\s+(ai|artificial)/i.test(text)) return { status: 'ok', license: 'AI-generated', reason: 'Slide text indicates AI-generated image' };
+  return null;
+}
+
+function parseXMP(text) {
+  if (!text) return null;
+  const checks = [
+    { p: /creativecommons\.org\/publicdomain\/zero/i, l: 'CC0 / Public Domain' },
+    { p: /creativecommons\.org\/publicdomain\/mark/i, l: 'Public Domain Mark' },
+    { p: /creativecommons\.org\/licenses\/by\/4/i, l: 'CC BY 4.0' },
+    { p: /creativecommons\.org\/licenses\/by\/3/i, l: 'CC BY 3.0' },
+    { p: /creativecommons\.org\/licenses\/by-sa\/4/i, l: 'CC BY-SA 4.0' },
+    { p: /creativecommons\.org\/licenses\/by-nc/i, l: 'CC BY-NC' },
+    { p: /creativecommons\.org\/licenses\/by-nd/i, l: 'CC BY-ND' },
+    { p: /public.?domain/i, l: 'Public Domain' },
+    { p: /all rights reserved/i, l: 'All Rights Reserved' },
+    { p: /getty images/i, l: 'Getty Images (commercial)' },
+    { p: /shutterstock/i, l: 'Shutterstock (commercial)' },
+  ];
+  for (const c of checks) if (c.p.test(text)) return c.l;
+  const m = text.match(/<dc:rights[^>]*>([^<]{3,120})<\/dc:rights>/i) || text.match(/<xmpRights:UsageTerms[^>]*>([^<]{3,120})<\/xmpRights:UsageTerms>/i);
+  return m ? m[1].trim() : null;
+}
+function licenseToStatus(l) {
+  if (!l) return null;
+  if (/cc0|public domain/i.test(l)) return 'ok';
+  if (/cc by[^-]|cc by 4|cc by 3|cc by-sa/i.test(l)) return 'ok';
+  if (/cc by-nc|cc by-nd/i.test(l)) return 'warn';
+  if (/all rights reserved|getty|shutterstock|istock|commercial/i.test(l)) return 'bad';
+  return 'warn';
+}
+async function readMeta(blob, ext) {
+  try {
+    const text = new TextDecoder('utf-8', { fatal: false }).decode(new Uint8Array(await blob.arrayBuffer()));
+    const s = Math.max(text.indexOf('<x:xmpmeta'), text.indexOf('<?xpacket'));
+    if (s >= 0) { const l = parseXMP(text.slice(s, s + 8000)); if (l) return { license: l, source: 'XMP metadata' }; }
+    if (ext === 'jpg' || ext === 'jpeg') { const m = text.slice(0, 4000).match(/Copyright[:\s]+([^\x00\n\r]{3,80})/i); if (m) return { license: m[1].trim(), source: 'EXIF metadata' }; }
+  } catch(e) {}
+  return null;
+}
+function filenameToQuery(name) {
+  return name.replace(/\.[a-z]{2,5}$/i,'').replace(/[-_]+/g,' ').replace(/\d{6,}/g,'').replace(/\b(img|image|photo|pic|file|dsc|screenshot)\b/gi,'').replace(/\s+/g,' ').trim() || name.replace(/\.[a-z]{2,5}$/i,'');
+}
+
+// Parse alt text and decorative status from shape XML
+function parseAltText(shapeXml) {
+  // Decorative flag (PowerPoint 2019+)
+  if (/<adec:decorative\s+val="1"/i.test(shapeXml)) return { decorative: true, altText: '' };
+  // Also check older decorative pattern
+  if (/decorative="1"/i.test(shapeXml)) return { decorative: true, altText: '' };
+  // Alt text is in <p:cNvPr ... descr="...">
+  const descrMatch = shapeXml.match(/\bdescr="([^"]*)"/);
+  const altText = descrMatch ? descrMatch[1].trim() : '';
+  // Empty descr with no title often means intentionally decorative in older PPT
+  const titleMatch = shapeXml.match(/\btitle="([^"]*)"/);
+  const title = titleMatch ? titleMatch[1].trim() : '';
+  return { decorative: false, altText: altText || title };
+}
+
+async function extractImages(file) {
+  const zip = await JSZip.loadAsync(await file.arrayBuffer());
+
+  // Collect all media filenames from slide masters and layouts — skip these
+  const masterMediaFiles = new Set();
+  const masterPaths = Object.keys(zip.files).filter(f =>
+    (f.startsWith('ppt/slideMasters/') || f.startsWith('ppt/slideLayouts/')) &&
+    f.endsWith('.rels')
+  );
+  for (const rf of masterPaths) {
+    const content = await zip.files[rf].async('text');
+    for (const m of [...content.matchAll(/Target="\.\.\/media\/([^"]+)"/g)]) masterMediaFiles.add(m[1]);
+    for (const m of [...content.matchAll(/Target="media\/([^"]+)"/g)]) masterMediaFiles.add(m[1]);
+  }
+
+  // Build slide text map (slide text + notes)
+  const slideTextMap = {};
+  for (const sf of Object.keys(zip.files).filter(f => /^ppt\/slides\/slide\d+\.xml$/i.test(f))) {
+    const num = parseInt(sf.match(/slide(\d+)\.xml$/i)?.[1]);
+    const xml = await zip.files[sf].async('text');
+    const texts = [...xml.matchAll(/<a:t[^>]*>([^<]+)<\/a:t>/g)].map(m => m[1]).join(' ');
+    const nf = zip.files['ppt/notesSlides/notesSlide' + num + '.xml'];
+    let notes = '';
+    if (nf) { const nx = await nf.async('text'); notes = [...nx.matchAll(/<a:t[^>]*>([^<]+)<\/a:t>/g)].map(m => m[1]).join(' '); }
+    slideTextMap[num] = (texts + ' ' + notes).trim();
+  }
+
+  // Build slide->media map with shape XML for alt text, preserving order
+  const slideToMedia = {};
+  const mediaAltText = {};
+  const relFiles = Object.keys(zip.files).filter(f => /ppt\/slides\/_rels\/slide\d+\.xml\.rels$/i.test(f));
+  for (const rf of relFiles) {
+    const num = parseInt(rf.match(/slide(\d+)\.xml\.rels/i)?.[1]);
+    const content = await zip.files[rf].async('text');
+
+    // Build rId->media map for this slide
+    const rIdToMedia = {};
+    for (const m of [...content.matchAll(/Id="(rId\d+)"[^>]*Target="\.\.\/media\/([^"]+)"/g)]) rIdToMedia[m[1]] = m[2];
+    for (const m of [...content.matchAll(/Id="(rId\d+)"[^>]*Target="media\/([^"]+)"/g)]) rIdToMedia[m[1]] = m[2];
+
+    // Parse the slide XML to get shapes with their rIds and alt text
+    const slideFile = zip.files['ppt/slides/slide' + num + '.xml'];
+    if (slideFile) {
+      const slideXml = await slideFile.async('text');
+      // Find all picture shapes <p:pic>
+      const picMatches = [...slideXml.matchAll(/<p:pic[\s>][\s\S]*?<\/p:pic>/g)];
+      if (!slideToMedia[num]) slideToMedia[num] = [];
+      for (const pm of picMatches) {
+        const picXml = pm[0];
+        const rIdMatch = picXml.match(/r:embed="(rId\d+)"/);
+        if (!rIdMatch) continue;
+        const rId = rIdMatch[1];
+        const fname = rIdToMedia[rId];
+        if (!fname || !/\.(png|jpg|jpeg|gif|bmp|webp)$/i.test(fname)) continue;
+        const altInfo = parseAltText(picXml);
+        mediaAltText[num + '|' + fname] = altInfo;
+        if (!slideToMedia[num].includes(fname)) slideToMedia[num].push(fname);
+      }
+    }
+  }
+
+  // Build ordered list by slide
+  const seen = new Set();
+  const orderedEntries = [];
+  const sortedSlideNums = Object.keys(slideToMedia).map(Number).sort((a,b) => a - b);
+  for (const slideNum of sortedSlideNums) {
+    for (const fname of slideToMedia[slideNum]) {
+      if (!seen.has(fname)) { seen.add(fname); orderedEntries.push({ fname, slideNum }); }
+    }
+  }
+  // Catch any unlinked media
+  for (const mf of Object.keys(zip.files).filter(f => f.startsWith('ppt/media/') && /\.(png|jpg|jpeg|gif|bmp|webp)$/i.test(f))) {
+    const fname = mf.split('/').pop();
+    if (!seen.has(fname)) orderedEntries.push({ fname, slideNum: null });
+  }
+
+  const images = [];
+  for (const { fname, slideNum } of orderedEntries) {
+    const mf = 'ppt/media/' + fname;
+    if (!zip.files[mf]) continue;
+    const isMasterMedia = masterMediaFiles.has(fname);
+    const ext = fname.split('.').pop().toLowerCase();
+    const blob = await zip.files[mf].async('blob');
+    const dataUrl = await new Promise((res,rej) => { const r = new FileReader(); r.onload = () => res(r.result); r.onerror = rej; r.readAsDataURL(blob); });
+    const altInfo = slideNum ? (mediaAltText[slideNum + '|' + fname] || { decorative: false, altText: '' }) : { decorative: false, altText: '' };
+    images.push({
+      name: fname, dataUrl, slide: slideNum ?? '?', ext, blob,
+      sizeKb: Math.round(blob.size / 1024),
+      slideText: slideNum ? (slideTextMap[slideNum] || '') : '',
+      isMasterMedia,
+      decorative: altInfo.decorative,
+      altText: altInfo.altText,
+    });
+  }
+  return images;
+}
+
+async function handleFile(file) {
+  if (!file) return;
+  if (!file.name.endsWith('.pptx')) { showError('Please upload a .pptx file.'); return; }
+  clearError(); allResults = []; skippedImages = []; cardsContainer.innerHTML = '';
+  document.getElementById('export-csv').style.display = 'none';
+  document.getElementById('export-json').style.display = 'none';
+  resultsArea.style.display = 'none';
+
+  let images;
+  try { images = await extractImages(file); }
+  catch(e) { showError('Could not read the .pptx file: ' + e.message); return; }
+  if (!images.length) { showError('No images found in this presentation.'); return; }
+
+  for (let i = 0; i < images.length; i++) {
+    const img = images[i];
+
+    // Skip slide master / layout images
+    if (img.isMasterMedia) {
+      skippedImages.push({ name: img.name, reason: 'Slide master / layout image' });
+      continue;
+    }
+    // Skip decorative images
+    if (img.decorative) {
+      skippedImages.push({ name: img.name, slide: img.slide, reason: 'Marked decorative in PowerPoint' });
+      continue;
+    }
+
+    const meta = await readMeta(img.blob, img.ext);
+    const fn = analyzeFilename(img.name);
+    const sr = checkSlideText(img.slideText);
+    let status = fn.status, license = fn.license;
+    const reasons = [fn.reason];
+
+    // If alt text exists and contains copyright hints, use it
+    if (img.altText) {
+      const altLower = img.altText.toLowerCase();
+      if (/wikimedia|wikipedia/i.test(img.altText)) {
+        status = 'ok'; license = 'Wikimedia Commons (alt text)';
+        reasons.unshift('Alt text references Wikimedia: "' + img.altText.slice(0,60) + '"');
+      } else if (/cc0|public domain/i.test(img.altText)) {
+        status = 'ok'; license = 'Public Domain (alt text)';
+        reasons.unshift('Alt text indicates public domain: "' + img.altText.slice(0,60) + '"');
+      } else if (/creative commons|cc by/i.test(img.altText)) {
+        status = 'ok'; license = 'Creative Commons (alt text)';
+        reasons.unshift('Alt text indicates CC license: "' + img.altText.slice(0,60) + '"');
+      } else if (/getty|shutterstock|istock/i.test(img.altText)) {
+        status = 'bad'; license = 'Commercial stock (alt text)';
+        reasons.unshift('Alt text references commercial stock: "' + img.altText.slice(0,60) + '"');
+      }
+    }
+
+    if (meta) { const ms = licenseToStatus(meta.license); reasons.unshift('Embedded ' + meta.source + ': ' + meta.license); if (ms) { status = ms; license = meta.license; } }
+    if (sr && (sr.status === 'ok' || status === 'warn')) { status = sr.status; license = sr.license; reasons.unshift(sr.reason); }
+
+    const wikiQuery = filenameToQuery(img.name);
+    allResults.push({
+      index: allResults.length, name: img.name, slide: img.slide, status, license,
+      sizeKb: img.sizeKb, reasons, wikiQuery,
+      wikiUrl: 'https://commons.wikimedia.org/w/index.php?search=' + encodeURIComponent(wikiQuery) + '&title=Special:MediaSearch&type=image',
+      dataUrl: img.dataUrl, override: null,
+      altText: img.altText,
+      slideTextSnippet: img.slideText ? img.slideText.slice(0, 120) : '',
+    });
+  }
+
+  resultsArea.style.display = 'block';
+  renderStats(); renderCards(); renderFilters(); renderSkipped(); setupExports();
+}
+
+function effectiveStatus(r) { return r.override ? 'ok' : r.status; }
+
+function renderStats() {
+  const ok = allResults.filter(r => effectiveStatus(r) === 'ok').length;
+  const warn = allResults.filter(r => effectiveStatus(r) === 'warn').length;
+  const bad = allResults.filter(r => effectiveStatus(r) === 'bad').length;
+  const ov = allResults.filter(r => r.override).length;
+  statsRow.innerHTML = `
+    <div class="stat-card"><div class="stat-label">Total images</div><div class="stat-val">${allResults.length}</div></div>
+    <div class="stat-card"><div class="stat-label">Cleared</div><div class="stat-val ok">${ok}</div></div>
+    <div class="stat-card"><div class="stat-label">Needs review</div><div class="stat-val warn">${warn}</div></div>
+    <div class="stat-card"><div class="stat-label">Replace</div><div class="stat-val danger">${bad}</div></div>
+    <div class="stat-card"><div class="stat-label">Overridden</div><div class="stat-val info">${ov}</div></div>`;
+}
+
+function buildCard(r) {
+  const es = effectiveStatus(r);
+  const el = document.createElement('div');
+  el.className = 'image-card status-' + es;
+  el.id = 'card-' + r.index;
+  el.dataset.status = es;
+  const bc = es === 'ok' ? 'badge-ok' : es === 'bad' ? 'badge-danger' : 'badge-warn';
+  const bl = es === 'ok' ? 'Cleared' : es === 'bad' ? 'Replace required' : 'Needs review';
+  const licenseLabel = r.override ? OVERRIDE_LABELS[r.override] : r.license;
+  const suggestion = es !== 'ok' ? `<div class="suggestion-box"><div class="suggestion-title">Suggested Wikimedia Commons search</div><div class="wiki-query">"${r.wikiQuery}"</div><a href="${r.wikiUrl}" class="suggestion-link" target="_blank">Browse free alternatives on Wikimedia Commons →</a></div>` : '';
+  const altRow = r.altText ? `<div class="alt-text-row">Alt text: "${r.altText.slice(0,100)}${r.altText.length > 100 ? '…' : ''}"</div>` : '';
+  const snippet = r.slideTextSnippet ? `<div class="slide-text-row">Slide text scanned: "${r.slideTextSnippet}${r.slideTextSnippet.length >= 120 ? '…' : ''}"</div>` : '';
+  const overrideBtns = OVERRIDE_BTNS.map(b => `<button class="override-btn ${r.override === b.type ? 'active-ok' : ''}" data-idx="${r.index}" data-type="${b.type}">${b.label}</button>`).join('');
+  const clearBtn = r.override ? `<button class="override-btn" data-idx="${r.index}" data-type="clear">Clear</button>` : '';
+  el.innerHTML = `
+    <img class="img-thumb" src="${r.dataUrl}" alt="${r.altText || ''}" onerror="this.style.display='none'">
+    <div class="img-meta">
+      <div class="img-name">${r.name}</div>
+      <div class="img-slide">Slide ${r.slide} &nbsp;·&nbsp; ${r.sizeKb} KB</div>
+      <div class="img-row-actions">
+        <span class="badge ${bc}">${bl}</span>
+        <span class="badge badge-gray">${licenseLabel}</span>
+        ${r.override ? '<span class="badge badge-info">manually classified</span>' : ''}
+      </div>
+      ${r.reasons.map(x => `<div class="detail-row">${x}</div>`).join('')}
+      ${altRow}${snippet}${suggestion}
+      <div class="override-row"><span class="override-label">Mark as:</span>${overrideBtns}${clearBtn}</div>
+    </div>`;
+  el.querySelectorAll('.override-btn[data-type]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const idx = parseInt(btn.dataset.idx);
+      allResults[idx].override = btn.dataset.type === 'clear' ? null : btn.dataset.type;
+      renderStats(); renderFilters();
+      const old = document.getElementById('card-' + idx);
+      if (old) old.replaceWith(buildCard(allResults[idx]));
+    });
+  });
+  return el;
+}
+
+function renderCards() {
+  cardsContainer.innerHTML = '';
+  let lastSlide = null;
+  for (const r of allResults) {
+    if (r.slide !== lastSlide) {
+      const label = document.createElement('div');
+      label.className = 'slide-group-label';
+      label.dataset.slideGroup = r.slide;
+      label.textContent = r.slide === '?' ? 'Slide: unknown' : 'Slide ' + r.slide;
+      cardsContainer.appendChild(label);
+      lastSlide = r.slide;
+    }
+    cardsContainer.appendChild(buildCard(r));
+  }
+}
+
+function renderFilters() {
+  const fr = document.getElementById('filter-row');
+  const ok = allResults.filter(r => effectiveStatus(r) === 'ok').length;
+  const warn = allResults.filter(r => effectiveStatus(r) === 'warn').length;
+  const bad = allResults.filter(r => effectiveStatus(r) === 'bad').length;
+  const cur = fr.querySelector('.filter-btn.active')?.dataset.filter || 'all';
+  fr.innerHTML = `
+    <button class="filter-btn ${cur==='all'?'active':''}" data-filter="all">All (${allResults.length})</button>
+    <button class="filter-btn ${cur==='ok'?'active':''}" data-filter="ok">Cleared (${ok})</button>
+    <button class="filter-btn ${cur==='warn'?'active':''}" data-filter="warn">Review (${warn})</button>
+    <button class="filter-btn ${cur==='bad'?'active':''}" data-filter="bad">Replace (${bad})</button>`;
+  fr.querySelectorAll('.filter-btn').forEach(btn => btn.addEventListener('click', () => {
+    fr.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    const f = btn.dataset.filter;
+    for (const r of allResults) {
+      const card = document.getElementById('card-' + r.index);
+      if (card) card.style.display = (f === 'all' || effectiveStatus(r) === f) ? 'grid' : 'none';
+    }
+    document.querySelectorAll('.slide-group-label').forEach(label => {
+      const sv = label.dataset.slideGroup;
+      const hasVisible = allResults.filter(r => String(r.slide) === sv).some(r => f === 'all' || effectiveStatus(r) === f);
+      label.style.display = hasVisible ? 'block' : 'none';
+    });
+  }));
+}
+
+function renderSkipped() {
+  const section = document.getElementById('skipped-section');
+  const list = document.getElementById('skipped-list');
+  const toggle = document.getElementById('skipped-toggle');
+  if (!skippedImages.length) { section.style.display = 'none'; return; }
+  section.style.display = 'block';
+  toggle.textContent = '▶ Show skipped images (' + skippedImages.length + ' decorative / slide master)';
+  list.innerHTML = skippedImages.map(s => `<div class="skipped-item"><span class="badge badge-gray">skipped</span><span>${s.name}${s.slide ? ' — Slide ' + s.slide : ''} — ${s.reason}</span></div>`).join('');
+  toggle.onclick = () => {
+    const open = list.classList.toggle('open');
+    toggle.textContent = (open ? '▼' : '▶') + ' Show skipped images (' + skippedImages.length + ' decorative / slide master)';
+  };
+}
+
+function buildCSV() {
+  const rows = [['Image filename','Slide','Size (KB)','Alt text','Status','Override','License','Reason','Wikimedia search','Wikimedia URL']];
+  allResults.forEach(r => rows.push([r.name, r.slide, r.sizeKb, r.altText||'', r.status, r.override||'', r.license, r.reasons.join(' | '), r.wikiQuery, r.wikiUrl]));
+  return rows.map(r => r.map(v => `"${String(v).replace(/"/g,'""')}"`).join(',')).join('\n');
+}
+function buildJSON() { return JSON.stringify(allResults.map(({dataUrl,...rest}) => rest), null, 2); }
+
+function setupExports() {
+  document.getElementById('btn-show-csv').onclick = () => { const b = document.getElementById('export-csv'); const v = b.style.display !== 'none'; b.style.display = v ? 'none' : 'block'; if (!v) document.getElementById('csv-text').value = buildCSV(); };
+  document.getElementById('btn-show-json').onclick = () => { const b = document.getElementById('export-json'); const v = b.style.display !== 'none'; b.style.display = v ? 'none' : 'block'; if (!v) document.getElementById('json-text').value = buildJSON(); };
+  document.getElementById('copy-csv').onclick = () => { navigator.clipboard.writeText(buildCSV()).then(() => { const b = document.getElementById('copy-csv'); b.textContent = 'Copied!'; setTimeout(() => b.textContent = 'Copy to clipboard', 2000); }); };
+  document.getElementById('copy-json').onclick = () => { navigator.clipboard.writeText(buildJSON()).then(() => { const b = document.getElementById('copy-json'); b.textContent = 'Copied!'; setTimeout(() => b.textContent = 'Copy to clipboard', 2000); }); };
+}
+</script>
+</body>
+</html>
