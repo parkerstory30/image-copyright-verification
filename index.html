@@ -1,0 +1,911 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Image Copyright Checker</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
+:root{
+  --bg:#ffffff;--bg2:#f5f5f3;--bg3:#eeede9;
+  --text:#1a1a18;--text2:#5a5a56;--text3:#9a9a94;
+  --border:rgba(0,0,0,0.1);--border2:rgba(0,0,0,0.18);
+  --green-bg:#eaf3de;--green-text:#3b6d11;
+  --yellow-bg:#faeeda;--yellow-text:#854f0b;
+  --red-bg:#fcebeb;--red-text:#a32d2d;
+  --blue-bg:#e6f1fb;--blue-text:#185fa5;
+  --purple-bg:#f0eaff;--purple-text:#5b21b6;
+  --radius:8px;--radius-lg:12px;
+  --font:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+  --mono:'Menlo','Consolas',monospace;
+}
+@media(prefers-color-scheme:dark){:root{
+  --bg:#1e1e1c;--bg2:#2a2a28;--bg3:#323230;
+  --text:#e8e8e4;--text2:#a8a8a2;--text3:#686864;
+  --border:rgba(255,255,255,0.1);--border2:rgba(255,255,255,0.18);
+  --green-bg:#173404;--green-text:#c0dd97;
+  --yellow-bg:#412402;--yellow-text:#fac775;
+  --red-bg:#501313;--red-text:#f7c1c1;
+  --blue-bg:#042c53;--blue-text:#b5d4f4;
+  --purple-bg:#2d1f4e;--purple-text:#c4b5fd;
+}}
+body{font-family:var(--font);background:var(--bg3);color:var(--text);min-height:100vh;}
+.page{max-width:900px;margin:0 auto;padding:2rem 1.25rem 4rem;}
+header{margin-bottom:1.5rem;}
+h1{font-size:22px;font-weight:500;color:var(--text);margin-bottom:4px;}
+.subtitle{font-size:13px;color:var(--text2);}
+.drop-zone{border:1.5px dashed var(--border2);border-radius:var(--radius-lg);padding:2rem 1.5rem;text-align:center;cursor:pointer;transition:background 0.15s;background:var(--bg2);}
+.drop-zone:hover,.drop-zone.drag-over{background:var(--blue-bg);border-color:var(--blue-text);}
+.drop-icon{font-size:28px;margin-bottom:0.6rem;}
+.drop-title{font-size:15px;font-weight:500;color:var(--text);margin-bottom:3px;}
+.drop-sub{font-size:12px;color:var(--text2);}
+#file-input{display:none;}
+.info-banner{padding:0.6rem 1rem;background:var(--blue-bg);border-radius:var(--radius);color:var(--blue-text);font-size:12px;margin-top:0.85rem;line-height:1.6;}
+.toolbar{display:flex;gap:8px;margin-top:1rem;flex-wrap:wrap;align-items:center;}
+.btn{font-size:12px;padding:6px 14px;border-radius:var(--radius);border:0.5px solid var(--border2);background:transparent;color:var(--text);cursor:pointer;font-family:var(--font);}
+.btn:hover{background:var(--bg2);}
+.btn:disabled{opacity:0.45;cursor:default;}
+.btn-primary{background:var(--blue-bg);color:var(--blue-text);border-color:var(--blue-text);}
+.btn-primary:hover{opacity:0.85;}
+.btn-green{background:var(--green-bg);color:var(--green-text);border-color:var(--green-text);}
+.btn-green:hover{opacity:0.85;}
+.reviewer-row{display:flex;gap:8px;align-items:center;margin-top:0.85rem;}
+.reviewer-input{font-size:12px;padding:5px 9px;border-radius:var(--radius);border:0.5px solid var(--border2);background:var(--bg2);color:var(--text);font-family:var(--font);width:220px;}
+.reviewer-label{font-size:12px;color:var(--text2);}
+
+/* Tabs */
+.tabs-bar{display:flex;gap:4px;margin-top:1.5rem;flex-wrap:wrap;border-bottom:1px solid var(--border);}
+.tab-btn{font-size:12px;padding:6px 14px;border-radius:var(--radius) var(--radius) 0 0;border:0.5px solid transparent;background:transparent;color:var(--text2);cursor:pointer;font-family:var(--font);border-bottom:none;position:relative;top:1px;}
+.tab-btn:hover{background:var(--bg2);}
+.tab-btn.active{background:var(--bg);color:var(--text);border-color:var(--border);border-bottom-color:var(--bg);}
+.tab-btn .tab-badge{display:inline-block;font-size:10px;padding:1px 5px;border-radius:10px;margin-left:4px;}
+.tab-btn .tb-warn{background:var(--yellow-bg);color:var(--yellow-text);}
+.tab-btn .tb-bad{background:var(--red-bg);color:var(--red-text);}
+.tab-btn .tb-ok{background:var(--green-bg);color:var(--green-text);}
+.tab-panel{display:none;background:var(--bg);border:0.5px solid var(--border);border-top:none;border-radius:0 0 var(--radius-lg) var(--radius-lg);padding:1.25rem;}
+.tab-panel.active{display:block;}
+
+/* Stats */
+.stats-row{display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin-bottom:1rem;}
+.stat-card{background:var(--bg2);border-radius:var(--radius);padding:0.7rem 0.8rem;}
+.stat-label{font-size:11px;color:var(--text2);margin-bottom:3px;}
+.stat-val{font-size:19px;font-weight:500;color:var(--text);}
+.stat-val.ok{color:var(--green-text);}
+.stat-val.warn{color:var(--yellow-text);}
+.stat-val.danger{color:var(--red-text);}
+.stat-val.info{color:var(--blue-text);}
+
+/* Cards */
+.section-label{font-size:12px;font-weight:500;color:var(--text2);text-transform:uppercase;letter-spacing:.05em;margin:1rem 0 .6rem;}
+.slide-group-label{font-size:12px;font-weight:500;color:var(--text2);padding:5px 0 3px;margin-top:.4rem;border-top:.5px solid var(--border);}
+.image-card{border:.5px solid var(--border);border-radius:var(--radius-lg);padding:.85rem 1rem;margin-bottom:.6rem;background:var(--bg3);display:grid;grid-template-columns:76px 1fr;gap:.85rem;align-items:start;}
+.image-card.status-ok{border-color:var(--green-text);background:var(--bg);}
+.image-card.status-bad{border-color:var(--red-text);}
+.img-thumb{width:76px;height:56px;object-fit:contain;border-radius:var(--radius);border:.5px solid var(--border);background:var(--bg2);display:block;}
+.img-meta{display:flex;flex-direction:column;gap:4px;}
+.img-name{font-size:12px;font-weight:500;color:var(--text);word-break:break-all;}
+.img-slide{font-size:11px;color:var(--text2);}
+.badge{display:inline-block;font-size:11px;font-weight:500;padding:2px 7px;border-radius:var(--radius);white-space:nowrap;}
+.badge-ok{background:var(--green-bg);color:var(--green-text);}
+.badge-warn{background:var(--yellow-bg);color:var(--yellow-text);}
+.badge-danger{background:var(--red-bg);color:var(--red-text);}
+.badge-info{background:var(--blue-bg);color:var(--blue-text);}
+.badge-gray{background:var(--bg2);color:var(--text2);border:.5px solid var(--border);}
+.badge-purple{background:var(--purple-bg);color:var(--purple-text);}
+.conf-high{background:#eaf3de;color:#3b6d11;}
+.conf-med{background:#faeeda;color:#854f0b;}
+.conf-low{background:#f0eaff;color:#5b21b6;}
+.img-row-actions{display:flex;gap:5px;align-items:center;flex-wrap:wrap;margin-top:3px;}
+.detail-row{font-size:11px;color:var(--text2);margin-top:2px;line-height:1.5;}
+.conf-row{font-size:11px;color:var(--text3);margin-top:2px;font-style:italic;}
+.alt-text-row{font-size:11px;color:var(--text3);margin-top:2px;font-style:italic;}
+.override-row{display:flex;gap:5px;margin-top:7px;flex-wrap:wrap;align-items:center;}
+.override-label{font-size:11px;color:var(--text3);}
+.override-btn{font-size:11px;padding:3px 9px;border-radius:var(--radius);border:.5px solid var(--border2);background:transparent;color:var(--text2);cursor:pointer;font-family:var(--font);}
+.override-btn:hover{background:var(--bg2);}
+.override-btn.active-ok{background:var(--green-bg);color:var(--green-text);border-color:var(--green-text);}
+
+/* Attribution box */
+.attribution-box{margin-top:8px;padding:7px 9px;background:var(--green-bg);border-radius:var(--radius);border:.5px solid var(--green-text);}
+.attribution-label{font-size:11px;font-weight:500;color:var(--green-text);margin-bottom:4px;}
+.attribution-text{font-size:11px;color:var(--text);font-style:italic;line-height:1.5;margin-bottom:5px;}
+.attribution-formats{display:flex;gap:6px;flex-wrap:wrap;}
+.copy-attr-btn{font-size:11px;padding:3px 10px;border-radius:var(--radius);border:.5px solid var(--green-text);background:transparent;color:var(--green-text);cursor:pointer;font-family:var(--font);}
+.copy-attr-btn:hover{background:var(--bg2);}
+
+/* Replacement */
+.replacement-section{margin-top:8px;}
+.replacement-search-row{display:flex;gap:6px;align-items:center;flex-wrap:wrap;}
+.replacement-query-input{font-size:12px;padding:4px 8px;border-radius:var(--radius);border:.5px solid var(--border2);background:var(--bg2);color:var(--text);font-family:var(--font);flex:1;min-width:140px;}
+.replacement-query-input:focus{outline:none;border-color:var(--blue-text);}
+.find-btn{font-size:11px;padding:4px 12px;border-radius:var(--radius);border:.5px solid var(--blue-text);background:var(--blue-bg);color:var(--blue-text);cursor:pointer;font-family:var(--font);white-space:nowrap;}
+.find-btn:hover{opacity:0.85;}
+.find-btn:disabled{opacity:0.5;cursor:default;}
+.wiki-browse-link{font-size:11px;color:var(--blue-text);text-decoration:none;white-space:nowrap;}
+.wiki-browse-link:hover{text-decoration:underline;}
+.replacement-results{margin-top:7px;}
+.replacement-loading{font-size:11px;color:var(--text3);font-style:italic;padding:5px 0;}
+.replacement-error{font-size:11px;color:var(--red-text);padding:5px 0;}
+.replacement-none{font-size:11px;color:var(--text3);padding:5px 0;font-style:italic;}
+.replacement-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:7px;margin-top:5px;}
+.replacement-card{border:.5px solid var(--border);border-radius:var(--radius);background:var(--bg2);overflow:hidden;display:flex;flex-direction:column;}
+.replacement-card:hover{border-color:var(--blue-text);}
+.replacement-thumb-wrap{width:100%;aspect-ratio:4/3;background:var(--bg3);display:flex;align-items:center;justify-content:center;overflow:hidden;}
+.replacement-thumb{width:100%;height:100%;object-fit:cover;display:block;}
+.replacement-thumb-placeholder{font-size:10px;color:var(--text3);text-align:center;padding:4px;}
+.replacement-info{padding:5px 6px;flex:1;display:flex;flex-direction:column;gap:3px;}
+.replacement-title{font-size:10px;font-weight:500;color:var(--text);line-height:1.3;word-break:break-word;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;}
+.replacement-license{font-size:10px;color:var(--green-text);background:var(--green-bg);padding:1px 5px;border-radius:3px;display:inline-block;width:fit-content;}
+.replacement-link{font-size:10px;color:var(--blue-text);text-decoration:none;margin-top:auto;padding-top:3px;display:block;}
+.replacement-link:hover{text-decoration:underline;}
+
+/* Filters / skipped */
+.filter-row{display:flex;gap:6px;margin-bottom:.85rem;flex-wrap:wrap;}
+.filter-btn{font-size:11px;padding:3px 10px;border-radius:var(--radius);border:.5px solid var(--border2);background:transparent;color:var(--text2);cursor:pointer;font-family:var(--font);}
+.filter-btn:hover{background:var(--bg2);}
+.filter-btn.active{background:var(--blue-bg);color:var(--blue-text);border-color:var(--blue-text);}
+.skipped-section{margin-top:1.25rem;}
+.skipped-toggle{font-size:12px;color:var(--text3);cursor:pointer;background:none;border:none;font-family:var(--font);padding:0;}
+.skipped-toggle:hover{color:var(--text2);}
+.skipped-list{margin-top:.5rem;display:none;}
+.skipped-list.open{display:block;}
+.skipped-item{font-size:11px;color:var(--text3);padding:4px 0;border-bottom:.5px solid var(--border);display:flex;gap:8px;align-items:center;}
+.panel-actions{display:flex;gap:8px;margin-top:1.25rem;flex-wrap:wrap;}
+.export-area{margin-top:1rem;}
+.export-label{font-size:11px;color:var(--text2);margin-bottom:5px;}
+.export-box{width:100%;min-height:90px;font-size:11px;font-family:var(--mono);padding:7px;border-radius:var(--radius);border:.5px solid var(--border2);background:var(--bg2);color:var(--text);resize:vertical;}
+.copy-btn{margin-top:5px;font-size:11px;padding:4px 12px;border-radius:var(--radius);border:.5px solid var(--border2);background:transparent;color:var(--text);cursor:pointer;font-family:var(--font);}
+.copy-btn:hover{background:var(--bg2);}
+.error-box{padding:.7rem 1rem;background:var(--red-bg);border-radius:var(--radius);color:var(--red-text);font-size:12px;margin-top:.85rem;}
+footer{margin-top:3rem;font-size:11px;color:var(--text3);text-align:center;}
+
+/* Session restore banner */
+.restore-banner{padding:.6rem 1rem;background:var(--purple-bg);border-radius:var(--radius);color:var(--purple-text);font-size:12px;margin-top:.85rem;display:flex;gap:10px;align-items:center;flex-wrap:wrap;}
+.restore-banner button{font-size:11px;padding:3px 10px;border-radius:var(--radius);border:.5px solid var(--purple-text);background:transparent;color:var(--purple-text);cursor:pointer;font-family:var(--font);}
+
+/* Print */
+@media print{
+  body{background:#fff !important;color:#000 !important;font-size:11pt;}
+  .page{max-width:100%;padding:0;}
+  .drop-zone,.info-banner,.toolbar,.tabs-bar,.reviewer-row,.filter-row,.panel-actions,
+  .override-row,.export-area,.skipped-section,.replacement-section,
+  .attribution-formats,.restore-banner,footer,.no-print{display:none !important;}
+  .tab-panel{display:block !important;border:none;padding:0;}
+  .print-cover{display:block !important;}
+  header{margin-bottom:.75rem;border-bottom:1pt solid #ccc;padding-bottom:.5rem;}
+  h1{font-size:16pt;}.subtitle{font-size:10pt;color:#555;}
+  .print-meta{display:block !important;font-size:10pt;color:#555;margin-bottom:.75rem;}
+  .stats-row{display:grid !important;grid-template-columns:repeat(5,1fr);gap:5px;margin-bottom:.75rem;}
+  .stat-card{border:1pt solid #ddd;border-radius:4pt;padding:5pt 7pt;background:#fafafa !important;}
+  .stat-label{font-size:8pt;color:#666;}.stat-val{font-size:15pt;}
+  .stat-val.ok{color:#3b6d11 !important;}.stat-val.warn{color:#854f0b !important;}.stat-val.danger{color:#a32d2d !important;}.stat-val.info{color:#185fa5 !important;}
+  .section-label{font-size:9pt;border-bottom:.5pt solid #ccc;padding-bottom:3pt;margin-bottom:5pt;}
+  .slide-group-label{font-size:10pt;font-weight:bold;color:#333 !important;border-top:1pt solid #ddd;padding-top:5pt;margin-top:6pt;page-break-after:avoid;}
+  .image-card{display:grid !important;grid-template-columns:65pt 1fr;gap:7pt;border:.5pt solid #ccc;border-radius:4pt;padding:6pt 8pt;margin-bottom:5pt;background:#fff !important;page-break-inside:avoid;}
+  .image-card.status-ok{border-color:#3b6d11 !important;}.image-card.status-bad{border-color:#a32d2d !important;}
+  .img-thumb{width:65pt;height:48pt;object-fit:contain;border:.5pt solid #ddd;background:#f5f5f5 !important;}
+  .img-name{font-size:9pt;font-weight:bold;}.img-slide{font-size:8pt;color:#666;}
+  .badge{font-size:8pt;padding:1pt 5pt;border-radius:3pt;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
+  .badge-ok{background:#eaf3de !important;color:#3b6d11 !important;}.badge-warn{background:#faeeda !important;color:#854f0b !important;}.badge-danger{background:#fcebeb !important;color:#a32d2d !important;}.badge-info{background:#e6f1fb !important;color:#185fa5 !important;}.badge-gray{background:#f0f0f0 !important;color:#555 !important;}
+  .conf-high{background:#eaf3de !important;color:#3b6d11 !important;}.conf-med{background:#faeeda !important;color:#854f0b !important;}.conf-low{background:#f0eaff !important;color:#5b21b6 !important;}
+  .detail-row{font-size:8pt;color:#555;}.conf-row{font-size:8pt;color:#888;font-style:italic;}.alt-text-row{font-size:8pt;color:#888;font-style:italic;}
+  .attribution-box{background:#eaf3de !important;border:.5pt solid #3b6d11 !important;padding:4pt 6pt;border-radius:3pt;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
+  .attribution-label{font-size:8pt;font-weight:bold;color:#3b6d11 !important;}.attribution-text{font-size:8pt;color:#222;font-style:italic;}
+}
+</style>
+</head>
+<body>
+<div class="page">
+  <header>
+    <h1>Image Copyright Checker</h1>
+    <p class="subtitle">Upload one or more .pptx files — each gets its own tab and separate export. Runs entirely in your browser, no data uploaded anywhere.</p>
+  </header>
+
+  <div class="drop-zone" id="dropZone">
+    <div class="drop-icon">📂</div>
+    <div class="drop-title">Drop one or more PowerPoint files here</div>
+    <div class="drop-sub">or click to browse &nbsp;·&nbsp; .pptx files only &nbsp;·&nbsp; multiple files supported</div>
+    <input type="file" id="file-input" accept=".pptx" multiple>
+  </div>
+
+  <div class="info-banner">
+    Scans filenames, XMP/EXIF metadata, and slide text for copyright signals. Decorative and slide master images excluded automatically. Confidence indicators show how certain each detection is. Attribution text is auto-generated for cleared images.
+  </div>
+
+  <div id="restore-banner" class="restore-banner" style="display:none;">
+    <span id="restore-msg"></span>
+    <button id="restore-yes">Restore saved session</button>
+    <button id="restore-no">Dismiss</button>
+  </div>
+
+  <div id="error-box" class="error-box" style="display:none;"></div>
+
+  <div class="toolbar" id="global-toolbar" style="display:none;">
+    <button class="btn btn-green" id="btn-save-session">💾 Save progress</button>
+    <button class="btn" id="btn-clear-session">Clear saved session</button>
+    <span style="font-size:11px;color:var(--text3);margin-left:4px;" id="save-status"></span>
+  </div>
+
+  <div id="tabs-bar" class="tabs-bar" style="display:none;"></div>
+  <div id="tab-panels"></div>
+
+  <footer>Image Copyright Checker &nbsp;·&nbsp; v1.3 &nbsp;·&nbsp; Runs locally in your browser &nbsp;·&nbsp; No data sent to any server</footer>
+</div>
+
+<script>
+// ── Constants ──────────────────────────────────────────────────────────────
+const OVERRIDE_LABELS={wikimedia:'Wikimedia Commons (manual)',adobe:'Adobe Stock (educational license)',ai:'AI-generated / original',original:'Instructor-created (original)',licensed:'Institutionally licensed'};
+const OVERRIDE_BTNS=[{type:'wikimedia',label:'Wikimedia Commons'},{type:'adobe',label:'Adobe Stock (edu)'},{type:'ai',label:'AI-generated'},{type:'original',label:'Instructor original'},{type:'licensed',label:'Other institutional license'}];
+const RESTRICTED=[{p:/getty/i,l:'Getty Images (commercial)'},{p:/shutterstock/i,l:'Shutterstock (commercial)'},{p:/\bistock\b/i,l:'iStock (commercial)'},{p:/alamy/i,l:'Alamy (commercial)'},{p:/dreamstime/i,l:'Dreamstime (commercial)'},{p:/depositphotos/i,l:'Depositphotos (commercial)'},{p:/\b123rf\b/i,l:'123RF (commercial)'},{p:/adobe.?stock/i,l:'Adobe Stock (verify license)'},{p:/corbis/i,l:'Corbis (commercial)'}];
+const FREE_FILE=[{p:/wikimedia|wikipedia|wiki_commons/i,l:'Wikimedia Commons'},{p:/pixabay/i,l:'Pixabay'},{p:/unsplash/i,l:'Unsplash'},{p:/pexels/i,l:'Pexels'},{p:/public.?domain|pd_|_pd\b/i,l:'Public Domain'},{p:/\bcc.?by\b|cc_by/i,l:'CC BY'},{p:/nasa\.gov|noaa\.gov|usgs\.gov|cdc\.gov/i,l:'US Government (Public Domain)'}];
+const AI_FILE=[/midjourney/i,/dall.?e/i,/stable.?diff/i,/firefly/i,/\bai.?gen/i,/gen.?ai/i,/canva.?ai/i,/ideogram/i,/leonardo.?ai/i];
+const WIKIMEDIA_SLIDE=[/wikimedia\s+commons/i,/commons\.wikimedia\.org/i,/wikipedia\.org/i,/\bwikipedia\b/i,/\bwikimedia\b/i];
+const CC_SLIDE=[{p:/cc0|creative\s+commons\s+zero|public\s+domain\s+dedication/i,l:'CC0 / Public Domain'},{p:/cc\s+by\s+4\.0|creative\s+commons.*by.*4\.0/i,l:'CC BY 4.0'},{p:/cc\s+by\s+3\.0/i,l:'CC BY 3.0'},{p:/cc\s+by.?sa\s+4\.0/i,l:'CC BY-SA 4.0'},{p:/cc\s+by.?sa\s+3\.0/i,l:'CC BY-SA 3.0'},{p:/cc\s+by.?nc/i,l:'CC BY-NC'},{p:/cc\s+by.?nd/i,l:'CC BY-ND'},{p:/creative\s+commons/i,l:'Creative Commons'},{p:/creativecommons\.org/i,l:'Creative Commons'}];
+const ADOBE_EDU_P=[/adobe\s+stock.*edu/i,/edu.*adobe\s+stock/i,/licensed\s+(via|through|from)\s+adobe/i,/adobe.*educational/i,/educational.*license/i,/adobe\s+express/i];
+const INSTRUCTOR_P=[/original\s+(image|photo|graphic|artwork|illustration)/i,/created\s+by\s+(the\s+)?(author|instructor|faculty|professor)/i,/instructor.?created/i,/faculty.?created/i,/own\s+(image|photo|work|creation)/i];
+const SESSION_KEY='copyright_checker_v13';
+
+// ── State ──────────────────────────────────────────────────────────────────
+let files={}; // keyed by filename: {results, skipped, fileName}
+let activeTab=null;
+
+// ── DOM ────────────────────────────────────────────────────────────────────
+const dropZone=document.getElementById('dropZone'),fileInput=document.getElementById('file-input');
+const errorBox=document.getElementById('error-box'),tabsBar=document.getElementById('tabs-bar'),tabPanels=document.getElementById('tab-panels');
+dropZone.addEventListener('dragover',e=>{e.preventDefault();dropZone.classList.add('drag-over');});
+dropZone.addEventListener('dragleave',()=>dropZone.classList.remove('drag-over'));
+dropZone.addEventListener('drop',e=>{e.preventDefault();dropZone.classList.remove('drag-over');handleFiles([...e.dataTransfer.files]);});
+dropZone.addEventListener('click',()=>fileInput.click());
+fileInput.addEventListener('change',e=>{if(e.target.files.length) handleFiles([...e.target.files]);fileInput.value='';});
+function showError(msg){errorBox.textContent=msg;errorBox.style.display='block';setTimeout(()=>errorBox.style.display='none',6000);}
+function clearError(){errorBox.style.display='none';}
+
+// ── Confidence scoring ─────────────────────────────────────────────────────
+function scoreConfidence(r){
+  // Returns {level:'high'|'medium'|'low', reason:string}
+  const reasons=r.reasons||[];
+  const topReason=(reasons[0]||'').toLowerCase();
+  if(/embedded xmp|embedded exif|xmp metadata|exif metadata/i.test(topReason))
+    return{level:'high',reason:'Embedded metadata found in the image file itself'};
+  if(/slide text.*wikimedia|wikimedia.*slide text|slide text.*cc license/i.test(topReason))
+    return{level:'high',reason:'Attribution text found on the slide'};
+  if(/filename matches commercial stock/i.test(topReason))
+    return{level:'high',reason:'Filename clearly identifies a commercial stock agency'};
+  if(/filename suggests free|filename suggests ai/i.test(topReason))
+    return{level:'medium',reason:'Filename suggests a free source but no embedded metadata to confirm'};
+  if(/alt text references|alt text indicates/i.test(topReason))
+    return{level:'medium',reason:'Based on alt text — verify the original source'};
+  if(/slide text.*adobe|slide text.*instructor/i.test(topReason))
+    return{level:'medium',reason:'Based on slide text — verify the license documentation'};
+  if(/long numeric id|generic camera|screenshot/i.test(topReason))
+    return{level:'low',reason:'No source information found — manual review needed'};
+  return{level:'low',reason:'Could not determine source — manual review needed'};
+}
+
+// ── Attribution text builder ───────────────────────────────────────────────
+function buildAttributionText(r){
+  const license=r.override?OVERRIDE_LABELS[r.override]:r.license;
+  const title=r.wikiSearchTitle||r.name.replace(/\.[a-z]{2,5}$/i,'').replace(/[-_]+/g,' ');
+  const author=r.wikiAuthor||'';
+  const source=r.override==='wikimedia'||/wikimedia|wikipedia/i.test(license)?'Wikimedia Commons':r.override==='adobe'?'Adobe Stock':'';
+  const licShort=license.replace(/\s*\(.*\)/,'').trim();
+  let plain=`"${title}"`;
+  if(author) plain+=` by ${author}`;
+  if(source) plain+=`, ${source}`;
+  if(licShort) plain+=`, ${licShort}`;
+  return plain;
+}
+
+// ── Analysis helpers ───────────────────────────────────────────────────────
+function analyzeFilename(name){
+  for(const p of RESTRICTED) if(p.p.test(name)) return{status:'bad',license:p.l,reason:'Filename matches commercial stock agency: '+p.l};
+  for(const p of FREE_FILE)   if(p.p.test(name)) return{status:'ok',license:p.l,reason:'Filename suggests free/open source: '+p.l};
+  for(const p of AI_FILE)     if(p.test(name))   return{status:'ok',license:'AI-generated (filename)',reason:'Filename suggests AI-generated image'};
+  if(/[-_](\d{7,12})[-_.]/.test(name)) return{status:'warn',license:'Unknown — possible stock',reason:'Long numeric ID in filename (common stock image pattern)'};
+  if(/screenshot|screen.?shot/i.test(name)) return{status:'warn',license:'Screenshot — unknown origin',reason:'Filename suggests a screenshot; original source unknown'};
+  if(/^(img_?|image_?|photo_?|pic_?|dsc_?|dscn_?|_mg_|p\d{4})/i.test(name)) return{status:'warn',license:'Unknown — generic filename',reason:'Generic camera/auto-generated filename; origin unknown'};
+  return{status:'warn',license:'Unknown',reason:'No copyright indicators found in filename'};
+}
+function checkSlideText(text){
+  if(!text) return null;
+  for(const p of ADOBE_EDU_P) if(p.test(text)) return{status:'ok',license:'Adobe Stock (educational license)',reason:'Slide text indicates Adobe Stock educational license'};
+  for(const p of INSTRUCTOR_P) if(p.test(text)) return{status:'ok',license:'Instructor-created (original)',reason:'Slide text indicates original instructor-created content'};
+  const fw=WIKIMEDIA_SLIDE.some(p=>p.test(text));let fc=null;
+  for(const c of CC_SLIDE){if(c.p.test(text)){fc=c.l;break;}}
+  if(fw&&fc) return{status:'ok',license:fc+' (Wikimedia Commons)',reason:'Slide text: Wikimedia Commons + '+fc};
+  if(fw)     return{status:'ok',license:'Wikimedia Commons',reason:'Slide text references Wikimedia Commons or Wikipedia'};
+  if(fc){const free=/cc0|public domain|cc by[^-]|cc by 4|cc by 3|cc by-sa/i.test(fc);return{status:free?'ok':'warn',license:fc,reason:'Slide text contains CC license: '+fc};}
+  for(const p of AI_FILE) if(p.test(text)) return{status:'ok',license:'AI-generated',reason:'Slide text references AI generation tool'};
+  if(/\bai.?generated\b|\bgenerated\s+(by|with|using)\s+(ai|artificial)/i.test(text)) return{status:'ok',license:'AI-generated',reason:'Slide text indicates AI-generated image'};
+  return null;
+}
+function parseXMP(text){
+  if(!text) return null;
+  const checks=[{p:/creativecommons\.org\/publicdomain\/zero/i,l:'CC0 / Public Domain'},{p:/creativecommons\.org\/publicdomain\/mark/i,l:'Public Domain Mark'},{p:/creativecommons\.org\/licenses\/by\/4/i,l:'CC BY 4.0'},{p:/creativecommons\.org\/licenses\/by\/3/i,l:'CC BY 3.0'},{p:/creativecommons\.org\/licenses\/by-sa\/4/i,l:'CC BY-SA 4.0'},{p:/creativecommons\.org\/licenses\/by-nc/i,l:'CC BY-NC'},{p:/creativecommons\.org\/licenses\/by-nd/i,l:'CC BY-ND'},{p:/public.?domain/i,l:'Public Domain'},{p:/all rights reserved/i,l:'All Rights Reserved'},{p:/getty images/i,l:'Getty Images (commercial)'},{p:/shutterstock/i,l:'Shutterstock (commercial)'}];
+  for(const c of checks) if(c.p.test(text)) return c.l;
+  const m=text.match(/<dc:rights[^>]*>([^<]{3,120})<\/dc:rights>/i)||text.match(/<xmpRights:UsageTerms[^>]*>([^<]{3,120})<\/xmpRights:UsageTerms>/i);
+  return m?m[1].trim():null;
+}
+function licenseToStatus(l){
+  if(!l) return null;
+  if(/cc0|public domain/i.test(l)) return'ok';
+  if(/cc by[^-]|cc by 4|cc by 3|cc by-sa/i.test(l)) return'ok';
+  if(/cc by-nc|cc by-nd/i.test(l)) return'warn';
+  if(/all rights reserved|getty|shutterstock|istock|commercial/i.test(l)) return'bad';
+  return'warn';
+}
+async function readMeta(blob,ext){
+  try{
+    const text=new TextDecoder('utf-8',{fatal:false}).decode(new Uint8Array(await blob.arrayBuffer()));
+    const s=Math.max(text.indexOf('<x:xmpmeta'),text.indexOf('<?xpacket'));
+    if(s>=0){const l=parseXMP(text.slice(s,s+8000));if(l) return{license:l,source:'XMP metadata'};}
+    if(ext==='jpg'||ext==='jpeg'){const m=text.slice(0,4000).match(/Copyright[:\s]+([^\x00\n\r]{3,80})/i);if(m) return{license:m[1].trim(),source:'EXIF metadata'};}
+  }catch(e){}
+  return null;
+}
+function parseAltText(xml){
+  if(/<adec:decorative\s+val="1"/i.test(xml)||/decorative="1"/i.test(xml)) return{decorative:true,altText:''};
+  const d=xml.match(/\bdescr="([^"]*)"/),t=xml.match(/\btitle="([^"]*)"/);
+  return{decorative:false,altText:(d?d[1]:t?t[1]:'').trim()};
+}
+function filenameToQuery(name){
+  return name.replace(/\.[a-z]{2,5}$/i,'').replace(/[-_]+/g,' ').replace(/\d{6,}/g,'').replace(/\b(img|image|photo|pic|file|dsc|screenshot)\b/gi,'').replace(/\s+/g,' ').trim()||name.replace(/\.[a-z]{2,5}$/i,'');
+}
+
+// ── PPTX extraction ────────────────────────────────────────────────────────
+async function extractImages(file){
+  const zip=await JSZip.loadAsync(await file.arrayBuffer());
+  const masterMedia=new Set();
+  for(const rf of Object.keys(zip.files).filter(f=>(f.startsWith('ppt/slideMasters/')||f.startsWith('ppt/slideLayouts/'))&&f.endsWith('.rels'))){
+    const c=await zip.files[rf].async('text');
+    for(const m of [...c.matchAll(/Target="(?:\.\.\/)?media\/([^"]+)"/g)]) masterMedia.add(m[1]);
+  }
+  const slideTextMap={};
+  for(const sf of Object.keys(zip.files).filter(f=>/^ppt\/slides\/slide\d+\.xml$/i.test(f))){
+    const num=parseInt(sf.match(/slide(\d+)\.xml$/i)?.[1]);
+    const xml=await zip.files[sf].async('text');
+    const texts=[...xml.matchAll(/<a:t[^>]*>([^<]+)<\/a:t>/g)].map(m=>m[1]).join(' ');
+    const nf=zip.files['ppt/notesSlides/notesSlide'+num+'.xml'];
+    let notes='';if(nf){const nx=await nf.async('text');notes=[...nx.matchAll(/<a:t[^>]*>([^<]+)<\/a:t>/g)].map(m=>m[1]).join(' ');}
+    slideTextMap[num]=(texts+' '+notes).trim();
+  }
+  const slideToMedia={},mediaAltText={};
+  for(const rf of Object.keys(zip.files).filter(f=>/ppt\/slides\/_rels\/slide\d+\.xml\.rels$/i.test(f))){
+    const num=parseInt(rf.match(/slide(\d+)\.xml\.rels/i)?.[1]);
+    const c=await zip.files[rf].async('text');const rIdMap={};
+    for(const m of [...c.matchAll(/Id="(rId\d+)"[^>]*Target="(?:\.\.\/)?media\/([^"]+)"/g)]) rIdMap[m[1]]=m[2];
+    const sf=zip.files['ppt/slides/slide'+num+'.xml'];
+    if(sf){
+      const sx=await sf.async('text');if(!slideToMedia[num]) slideToMedia[num]=[];
+      for(const pm of [...sx.matchAll(/<p:pic[\s>][\s\S]*?<\/p:pic>/g)]){
+        const rm=pm[0].match(/r:embed="(rId\d+)"/);if(!rm) continue;
+        const fname=rIdMap[rm[1]];if(!fname||!/\.(png|jpg|jpeg|gif|bmp|webp)$/i.test(fname)) continue;
+        mediaAltText[num+'|'+fname]=parseAltText(pm[0]);
+        if(!slideToMedia[num].includes(fname)) slideToMedia[num].push(fname);
+      }
+    }
+  }
+  const seen=new Set(),ordered=[];
+  for(const sn of Object.keys(slideToMedia).map(Number).sort((a,b)=>a-b))
+    for(const f of slideToMedia[sn]) if(!seen.has(f)){seen.add(f);ordered.push({fname:f,slideNum:sn});}
+  for(const mf of Object.keys(zip.files).filter(f=>f.startsWith('ppt/media/')&&/\.(png|jpg|jpeg|gif|bmp|webp)$/i.test(f))){
+    const f=mf.split('/').pop();if(!seen.has(f)) ordered.push({fname:f,slideNum:null});
+  }
+  const images=[];
+  for(const {fname,slideNum} of ordered){
+    const mf='ppt/media/'+fname;if(!zip.files[mf]) continue;
+    const ext=fname.split('.').pop().toLowerCase();
+    const blob=await zip.files[mf].async('blob');
+    const dataUrl=await new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(r.result);r.onerror=rej;r.readAsDataURL(blob);});
+    const ai=slideNum?(mediaAltText[slideNum+'|'+fname]||{decorative:false,altText:''}):{decorative:false,altText:''};
+    images.push({name:fname,dataUrl,slide:slideNum??'?',ext,blob,sizeKb:Math.round(blob.size/1024),slideText:slideNum?(slideTextMap[slideNum]||''):'',isMasterMedia:masterMedia.has(fname),decorative:ai.decorative,altText:ai.altText});
+  }
+  return images;
+}
+
+// ── Process file ───────────────────────────────────────────────────────────
+async function processFile(file){
+  const images=await extractImages(file);
+  const results=[],skipped=[];
+  for(const img of images){
+    if(img.isMasterMedia){skipped.push({name:img.name,reason:'Slide master / layout image'});continue;}
+    if(img.decorative){skipped.push({name:img.name,slide:img.slide,reason:'Marked decorative in PowerPoint'});continue;}
+    const meta=await readMeta(img.blob,img.ext);
+    const fn=analyzeFilename(img.name);const sr=checkSlideText(img.slideText);
+    let status=fn.status,license=fn.license;const reasons=[fn.reason];
+    if(img.altText){
+      if(/wikimedia|wikipedia/i.test(img.altText)){status='ok';license='Wikimedia Commons (alt text)';reasons.unshift('Alt text references Wikimedia: "'+img.altText.slice(0,60)+'"');}
+      else if(/cc0|public domain/i.test(img.altText)){status='ok';license='Public Domain (alt text)';reasons.unshift('Alt text indicates public domain: "'+img.altText.slice(0,60)+'"');}
+      else if(/creative commons|cc by/i.test(img.altText)){status='ok';license='Creative Commons (alt text)';reasons.unshift('Alt text indicates CC license: "'+img.altText.slice(0,60)+'"');}
+      else if(/getty|shutterstock|istock/i.test(img.altText)){status='bad';license='Commercial stock (alt text)';reasons.unshift('Alt text references commercial stock: "'+img.altText.slice(0,60)+'"');}
+    }
+    if(meta){const ms=licenseToStatus(meta.license);reasons.unshift('Embedded '+meta.source+': '+meta.license);if(ms){status=ms;license=meta.license;}}
+    if(sr&&(sr.status==='ok'||status==='warn')){status=sr.status;license=sr.license;reasons.unshift(sr.reason);}
+    const wikiQuery=filenameToQuery(img.name);
+    results.push({index:results.length,name:img.name,slide:img.slide,status,license,sizeKb:img.sizeKb,reasons,wikiQuery,wikiUrl:'https://commons.wikimedia.org/w/index.php?search='+encodeURIComponent(wikiQuery)+'&title=Special:MediaSearch&type=image',dataUrl:img.dataUrl,override:null,altText:img.altText,slideTextSnippet:img.slideText?img.slideText.slice(0,120):'',wikiSearchTitle:'',wikiAuthor:''});
+  }
+  return{results,skipped,fileName:file.name,processedAt:new Date().toISOString()};
+}
+
+// ── Handle file batch ──────────────────────────────────────────────────────
+async function handleFiles(fileList){
+  clearError();
+  const pptxFiles=fileList.filter(f=>f.name.endsWith('.pptx'));
+  if(!pptxFiles.length){showError('Please upload .pptx files only.');return;}
+  document.getElementById('global-toolbar').style.display='flex';
+  tabsBar.style.display='flex';
+  for(const file of pptxFiles){
+    if(files[file.name]){activateTab(file.name);continue;}
+    addLoadingTab(file.name);
+    try{
+      const data=await processFile(file);
+      files[file.name]=data;
+      buildTab(file.name);
+      activateTab(file.name);
+    }catch(e){
+      showError('Could not process '+file.name+': '+e.message);
+      removeTab(file.name);
+    }
+  }
+}
+
+// ── Tab management ─────────────────────────────────────────────────────────
+function addLoadingTab(name){
+  const btn=document.createElement('button');
+  btn.className='tab-btn';btn.id='tab-btn-'+safeid(name);
+  btn.textContent=shortName(name)+' ⏳';
+  tabsBar.appendChild(btn);
+}
+function removeTab(name){
+  const btn=document.getElementById('tab-btn-'+safeid(name));
+  const panel=document.getElementById('tab-panel-'+safeid(name));
+  if(btn) btn.remove();if(panel) panel.remove();
+}
+function shortName(n){return n.length>28?n.slice(0,25)+'…':n;}
+function safeid(n){return n.replace(/[^a-z0-9]/gi,'_');}
+
+function buildTab(name){
+  const data=files[name];
+  const sid=safeid(name);
+  const existing=document.getElementById('tab-btn-'+sid);
+  const ok=data.results.filter(r=>effectiveStatus(r)==='ok').length;
+  const warn=data.results.filter(r=>effectiveStatus(r)==='warn').length;
+  const bad=data.results.filter(r=>effectiveStatus(r)==='bad').length;
+
+  // Tab button
+  const btn=document.createElement('button');
+  btn.className='tab-btn';btn.id='tab-btn-'+sid;btn.dataset.file=name;
+  btn.innerHTML=shortName(name)
+    +(bad?` <span class="tab-badge tb-bad">${bad}</span>`:'')
+    +(warn?` <span class="tab-badge tb-warn">${warn}</span>`:'')
+    +(ok?` <span class="tab-badge tb-ok">${ok}</span>`:'');
+  btn.addEventListener('click',()=>activateTab(name));
+  if(existing) existing.replaceWith(btn); else tabsBar.appendChild(btn);
+
+  // Panel
+  const oldPanel=document.getElementById('tab-panel-'+sid);
+  const panel=document.createElement('div');
+  panel.className='tab-panel';panel.id='tab-panel-'+sid;
+  panel.innerHTML=buildPanelHTML(data,sid);
+  if(oldPanel) oldPanel.replaceWith(panel); else tabPanels.appendChild(panel);
+
+  wirePanelEvents(data,sid);
+}
+
+function buildPanelHTML(data,sid){
+  const ok=data.results.filter(r=>effectiveStatus(r)==='ok').length;
+  const warn=data.results.filter(r=>effectiveStatus(r)==='warn').length;
+  const bad=data.results.filter(r=>effectiveStatus(r)==='bad').length;
+  const ov=data.results.filter(r=>r.override).length;
+  return `
+    <p class="print-meta" id="pmeta-${sid}" style="display:none;font-size:11px;color:var(--text2);margin-bottom:.75rem;">
+      File: ${data.fileName} &nbsp;·&nbsp; Generated: ${new Date(data.processedAt).toLocaleDateString('en-US',{year:'numeric',month:'long',day:'numeric'})}
+    </p>
+    <div class="stats-row">
+      <div class="stat-card"><div class="stat-label">Total images</div><div class="stat-val">${data.results.length}</div></div>
+      <div class="stat-card"><div class="stat-label">Cleared</div><div class="stat-val ok">${ok}</div></div>
+      <div class="stat-card"><div class="stat-label">Needs review</div><div class="stat-val warn">${warn}</div></div>
+      <div class="stat-card"><div class="stat-label">Replace</div><div class="stat-val danger">${bad}</div></div>
+      <div class="stat-card"><div class="stat-label">Overridden</div><div class="stat-val info">${ov}</div></div>
+    </div>
+    <div class="filter-row no-print" id="filter-row-${sid}"></div>
+    <div class="section-label">Image analysis — in slide order</div>
+    <div id="cards-${sid}"></div>
+    <div id="skipped-${sid}" class="skipped-section" style="display:none;">
+      <button class="skipped-toggle" id="skipped-toggle-${sid}">▶ Show skipped images</button>
+      <div class="skipped-list" id="skipped-list-${sid}"></div>
+    </div>
+    <div class="panel-actions no-print">
+      <button class="btn btn-primary" id="pdf-${sid}">Export PDF</button>
+      <button class="btn btn-primary" id="docx-${sid}">Export Word (.docx)</button>
+      <button class="btn" id="csv-toggle-${sid}">Show CSV</button>
+      <button class="btn" id="json-toggle-${sid}">Show JSON</button>
+    </div>
+    <div id="csv-area-${sid}" class="export-area no-print" style="display:none;">
+      <div class="export-label">CSV — copy and paste into Excel or Google Sheets</div>
+      <textarea class="export-box" id="csv-text-${sid}" readonly></textarea>
+      <button class="copy-btn" id="copy-csv-${sid}">Copy to clipboard</button>
+    </div>
+    <div id="json-area-${sid}" class="export-area no-print" style="display:none;">
+      <div class="export-label">JSON</div>
+      <textarea class="export-box" id="json-text-${sid}" readonly></textarea>
+      <button class="copy-btn" id="copy-json-${sid}">Copy to clipboard</button>
+    </div>`;
+}
+
+function wirePanelEvents(data,sid){
+  renderCards(data,sid);
+  renderFilters(data,sid);
+  renderSkipped(data,sid);
+  // exports
+  document.getElementById('pdf-'+sid).onclick=()=>exportPDF(sid);
+  document.getElementById('docx-'+sid).onclick=()=>exportDocx(data,sid);
+  document.getElementById('csv-toggle-'+sid).onclick=()=>{const b=document.getElementById('csv-area-'+sid);const v=b.style.display!=='none';b.style.display=v?'none':'block';if(!v) document.getElementById('csv-text-'+sid).value=buildCSV(data);};
+  document.getElementById('json-toggle-'+sid).onclick=()=>{const b=document.getElementById('json-area-'+sid);const v=b.style.display!=='none';b.style.display=v?'none':'block';if(!v) document.getElementById('json-text-'+sid).value=buildJSON(data);};
+  document.getElementById('copy-csv-'+sid).onclick=()=>copyText(buildCSV(data),'copy-csv-'+sid);
+  document.getElementById('copy-json-'+sid).onclick=()=>copyText(buildJSON(data),'copy-json-'+sid);
+}
+
+function activateTab(name){
+  activeTab=name;
+  document.querySelectorAll('.tab-btn').forEach(b=>b.classList.remove('active'));
+  document.querySelectorAll('.tab-panel').forEach(p=>p.classList.remove('active'));
+  const sid=safeid(name);
+  document.getElementById('tab-btn-'+sid)?.classList.add('active');
+  document.getElementById('tab-panel-'+sid)?.classList.add('active');
+}
+
+function effectiveStatus(r){return r.override?'ok':r.status;}
+
+// ── Card rendering ─────────────────────────────────────────────────────────
+function buildCard(r,data,sid){
+  const es=effectiveStatus(r);
+  const el=document.createElement('div');
+  el.className='image-card status-'+es;el.id='card-'+sid+'-'+r.index;el.dataset.status=es;
+  const bc=es==='ok'?'badge-ok':es==='bad'?'badge-danger':'badge-warn';
+  const bl=es==='ok'?'Cleared':es==='bad'?'Replace required':'Needs review';
+  const ll=r.override?OVERRIDE_LABELS[r.override]:r.license;
+  const conf=scoreConfidence(r);
+  const confClass='conf-'+conf.level;
+  const confLabel=conf.level.charAt(0).toUpperCase()+conf.level.slice(1)+' confidence';
+  const overrideBtns=OVERRIDE_BTNS.map(b=>`<button class="override-btn ${r.override===b.type?'active-ok':''}" data-idx="${r.index}" data-type="${b.type}">${b.label}</button>`).join('');
+  const clearBtn=r.override?`<button class="override-btn" data-idx="${r.index}" data-type="clear">Clear</button>`:'';
+  const altRow=r.altText?`<div class="alt-text-row">Alt text: "${r.altText.slice(0,100)}${r.altText.length>100?'…':''}"</div>`:'';
+
+  el.innerHTML=`
+    <img class="img-thumb" src="${r.dataUrl}" alt="${r.altText||''}" onerror="this.style.display='none'">
+    <div class="img-meta">
+      <div class="img-name">${r.name}</div>
+      <div class="img-slide">Slide ${r.slide} &nbsp;·&nbsp; ${r.sizeKb} KB</div>
+      <div class="img-row-actions">
+        <span class="badge ${bc}">${bl}</span>
+        <span class="badge badge-gray">${ll}</span>
+        <span class="badge ${confClass}">${confLabel}</span>
+        ${r.override?'<span class="badge badge-info">manually classified</span>':''}
+      </div>
+      ${r.reasons.map(x=>`<div class="detail-row">${x}</div>`).join('')}
+      <div class="conf-row">Confidence basis: ${conf.reason}</div>
+      ${altRow}
+      <div id="attr-area-${sid}-${r.index}"></div>
+      <div id="repl-area-${sid}-${r.index}"></div>
+      <div class="override-row no-print"><span class="override-label">Mark as:</span>${overrideBtns}${clearBtn}</div>
+    </div>`;
+
+  // Attribution box for cleared images
+  if(es==='ok'){
+    renderAttributionBox(r,sid,el);
+  }
+
+  // Replacement section for flagged images
+  if(es!=='ok'){
+    document.getElementById('repl-area-'+sid+'-'+r.index)?.appendChild(buildReplacementSection(r,sid));
+  }
+
+  // Override buttons
+  el.querySelectorAll('.override-btn[data-type]').forEach(btn=>{
+    btn.addEventListener('click',()=>{
+      const idx=parseInt(btn.dataset.idx);
+      data.results[idx].override=btn.dataset.type==='clear'?null:btn.dataset.type;
+      rebuildCard(data,sid,idx);
+      renderStats(data,sid);
+      renderFilters(data,sid);
+      buildTab(data.fileName); // refresh tab badge counts
+      activateTab(data.fileName);
+    });
+  });
+
+  return el;
+}
+
+function renderAttributionBox(r,sid,cardEl){
+  const attrArea=cardEl?cardEl.querySelector('#attr-area-'+sid+'-'+r.index):document.getElementById('attr-area-'+sid+'-'+r.index);
+  if(!attrArea) return;
+  const attrText=buildAttributionText(r);
+  attrArea.innerHTML=`
+    <div class="attribution-box">
+      <div class="attribution-label">📋 Attribution text</div>
+      <div class="attribution-text" id="attr-text-${sid}-${r.index}">${attrText}</div>
+      <div class="attribution-formats">
+        <button class="copy-attr-btn" id="copy-attr-${sid}-${r.index}">Copy attribution</button>
+      </div>
+    </div>`;
+  document.getElementById('copy-attr-'+sid+'-'+r.index)?.addEventListener('click',()=>{
+    navigator.clipboard.writeText(attrText).then(()=>{
+      const b=document.getElementById('copy-attr-'+sid+'-'+r.index);
+      b.textContent='Copied!';setTimeout(()=>b.textContent='Copy attribution',2000);
+    });
+  });
+}
+
+function rebuildCard(data,sid,idx){
+  const old=document.getElementById('card-'+sid+'-'+idx);
+  if(old) old.replaceWith(buildCard(data.results[idx],data,sid));
+}
+
+function renderCards(data,sid){
+  const container=document.getElementById('cards-'+sid);
+  if(!container) return;
+  container.innerHTML='';let lastSlide=null;
+  for(const r of data.results){
+    if(r.slide!==lastSlide){
+      const lbl=document.createElement('div');lbl.className='slide-group-label';lbl.dataset.slideGroup=r.slide;
+      lbl.textContent=r.slide==='?'?'Slide: unknown':'Slide '+r.slide;container.appendChild(lbl);lastSlide=r.slide;
+    }
+    container.appendChild(buildCard(r,data,sid));
+  }
+}
+
+function renderStats(data,sid){
+  const ok=data.results.filter(r=>effectiveStatus(r)==='ok').length;
+  const warn=data.results.filter(r=>effectiveStatus(r)==='warn').length;
+  const bad=data.results.filter(r=>effectiveStatus(r)==='bad').length;
+  const ov=data.results.filter(r=>r.override).length;
+  const panel=document.getElementById('tab-panel-'+sid);if(!panel) return;
+  const vals=panel.querySelectorAll('.stat-val');
+  if(vals.length>=4){vals[0].textContent=data.results.length;vals[1].textContent=ok;vals[2].textContent=warn;vals[3].textContent=bad;vals[4].textContent=ov;}
+}
+
+function renderFilters(data,sid){
+  const fr=document.getElementById('filter-row-'+sid);if(!fr) return;
+  const ok=data.results.filter(r=>effectiveStatus(r)==='ok').length;
+  const warn=data.results.filter(r=>effectiveStatus(r)==='warn').length;
+  const bad=data.results.filter(r=>effectiveStatus(r)==='bad').length;
+  const cur=fr.querySelector('.filter-btn.active')?.dataset.filter||'all';
+  fr.innerHTML=`
+    <button class="filter-btn ${cur==='all'?'active':''}" data-filter="all">All (${data.results.length})</button>
+    <button class="filter-btn ${cur==='ok'?'active':''}" data-filter="ok">Cleared (${ok})</button>
+    <button class="filter-btn ${cur==='warn'?'active':''}" data-filter="warn">Review (${warn})</button>
+    <button class="filter-btn ${cur==='bad'?'active':''}" data-filter="bad">Replace (${bad})</button>`;
+  fr.querySelectorAll('.filter-btn').forEach(btn=>btn.addEventListener('click',()=>{
+    fr.querySelectorAll('.filter-btn').forEach(b=>b.classList.remove('active'));btn.classList.add('active');
+    const f=btn.dataset.filter;
+    for(const r of data.results){const c=document.getElementById('card-'+sid+'-'+r.index);if(c) c.style.display=(f==='all'||effectiveStatus(r)===f)?'grid':'none';}
+    document.querySelectorAll('#tab-panel-'+sid+' .slide-group-label').forEach(lbl=>{
+      const sv=lbl.dataset.slideGroup;
+      lbl.style.display=data.results.filter(r=>String(r.slide)===sv).some(r=>f==='all'||effectiveStatus(r)===f)?'block':'none';
+    });
+  }));
+}
+
+function renderSkipped(data,sid){
+  const section=document.getElementById('skipped-'+sid);const list=document.getElementById('skipped-list-'+sid);const toggle=document.getElementById('skipped-toggle-'+sid);
+  if(!data.skipped.length){section.style.display='none';return;}
+  section.style.display='block';
+  toggle.textContent='▶ Show skipped images ('+data.skipped.length+' decorative / slide master)';
+  list.innerHTML=data.skipped.map(s=>`<div class="skipped-item"><span class="badge badge-gray">skipped</span><span>${s.name}${s.slide?' — Slide '+s.slide:''} — ${s.reason}</span></div>`).join('');
+  toggle.onclick=()=>{const open=list.classList.toggle('open');toggle.textContent=(open?'▼':'▶')+' Show skipped images ('+data.skipped.length+' decorative / slide master)';};
+}
+
+// ── Wikimedia search ───────────────────────────────────────────────────────
+async function searchWikimedia(query){
+  const url='https://commons.wikimedia.org/w/api.php?action=query&generator=search&gsrnamespace=6&gsrsearch='+encodeURIComponent(query)+'&gsrlimit=8&prop=imageinfo&iiprop=url|extmetadata|size&iiurlwidth=200&format=json&origin=*';
+  const resp=await fetch(url);if(!resp.ok) throw new Error('Network error');
+  const data=await resp.json();if(!data.query||!data.query.pages) return[];
+  return Object.values(data.query.pages).map(page=>{
+    const ii=page.imageinfo?.[0]||{};const meta=ii.extmetadata||{};
+    return{title:page.title.replace(/^File:/,''),thumbUrl:ii.thumburl||'',pageUrl:'https://commons.wikimedia.org/wiki/'+encodeURIComponent(page.title.replace(/ /g,'_')),license:meta.LicenseShortName?.value||meta.License?.value||'',artist:(meta.Artist?.value||'').replace(/<[^>]+>/g,'')};
+  }).filter(r=>r.thumbUrl).slice(0,4);
+}
+
+function buildReplacementSection(r,sid){
+  const div=document.createElement('div');div.className='replacement-section';
+  const wikiUrl='https://commons.wikimedia.org/w/index.php?search='+encodeURIComponent(r.wikiQuery)+'&title=Special:MediaSearch&type=image';
+  div.innerHTML=`
+    <div class="replacement-search-row">
+      <input class="replacement-query-input" id="rq-${sid}-${r.index}" type="text" value="${r.wikiQuery}" placeholder="Search terms…">
+      <button class="find-btn" id="rfind-${sid}-${r.index}">Find replacements</button>
+      <a href="${wikiUrl}" class="wiki-browse-link" target="_blank" id="rbrowse-${sid}-${r.index}">Browse all →</a>
+    </div>
+    <div class="replacement-results" id="rresults-${sid}-${r.index}"></div>`;
+  setTimeout(()=>{
+    const btn=document.getElementById('rfind-'+sid+'-'+r.index);
+    const input=document.getElementById('rq-'+sid+'-'+r.index);
+    const resultsDiv=document.getElementById('rresults-'+sid+'-'+r.index);
+    const browseLink=document.getElementById('rbrowse-'+sid+'-'+r.index);
+    if(!btn) return;
+    input.addEventListener('input',()=>{const q=input.value.trim()||r.wikiQuery;browseLink.href='https://commons.wikimedia.org/w/index.php?search='+encodeURIComponent(q)+'&title=Special:MediaSearch&type=image';});
+    btn.addEventListener('click',async()=>{
+      const q=input.value.trim()||r.wikiQuery;btn.disabled=true;btn.textContent='Searching…';
+      resultsDiv.innerHTML='<div class="replacement-loading">Searching Wikimedia Commons…</div>';
+      try{
+        const results=await searchWikimedia(q);
+        if(!results.length){resultsDiv.innerHTML='<div class="replacement-none">No images found for "'+q+'". Try editing the search terms above.</div>';}
+        else{
+          const grid=document.createElement('div');grid.className='replacement-grid';
+          results.forEach(res=>{
+            const card=document.createElement('div');card.className='replacement-card';
+            card.innerHTML=`<div class="replacement-thumb-wrap"><img class="replacement-thumb" src="${res.thumbUrl}" alt="${res.title}" loading="lazy" onerror="this.parentElement.innerHTML='<div class=replacement-thumb-placeholder>Preview unavailable</div>'"></div><div class="replacement-info"><div class="replacement-title">${res.title}</div>${res.license?`<span class="replacement-license">${res.license}</span>`:''}${res.artist?`<span style="font-size:9px;color:var(--text3);">By ${res.artist.slice(0,40)}${res.artist.length>40?'…':''}</span>`:''}<a href="${res.pageUrl}" class="replacement-link" target="_blank">View on Wikimedia →</a></div>`;
+            grid.appendChild(card);
+          });
+          resultsDiv.innerHTML='';resultsDiv.appendChild(grid);
+        }
+      }catch(e){resultsDiv.innerHTML='<div class="replacement-error">Search failed — check your internet connection.</div>';}
+      btn.disabled=false;btn.textContent='Find replacements';
+    });
+  },0);
+  return div;
+}
+
+// ── Session save / restore ─────────────────────────────────────────────────
+document.getElementById('btn-save-session').onclick=()=>{
+  const saveData={};
+  for(const[name,data] of Object.entries(files)){
+    saveData[name]={fileName:data.fileName,processedAt:data.processedAt,overrides:data.results.map(r=>r.override)};
+  }
+  try{localStorage.setItem(SESSION_KEY,JSON.stringify(saveData));const s=document.getElementById('save-status');s.textContent='Saved ✓';setTimeout(()=>s.textContent='',3000);}
+  catch(e){alert('Could not save session: '+e.message);}
+};
+document.getElementById('btn-clear-session').onclick=()=>{
+  localStorage.removeItem(SESSION_KEY);
+  const s=document.getElementById('save-status');s.textContent='Session cleared';setTimeout(()=>s.textContent='',3000);
+  document.getElementById('restore-banner').style.display='none';
+};
+
+function checkForSavedSession(){
+  try{
+    const raw=localStorage.getItem(SESSION_KEY);if(!raw) return;
+    const saved=JSON.parse(raw);const names=Object.keys(saved);if(!names.length) return;
+    document.getElementById('restore-msg').textContent='You have a saved session with '+names.length+' file'+(names.length>1?'s':'')+': '+names.map(n=>shortName(n)).join(', ');
+    document.getElementById('restore-banner').style.display='flex';
+    document.getElementById('restore-yes').onclick=()=>{
+      document.getElementById('restore-banner').style.display='none';
+      alert('To restore your session, re-upload the same .pptx file(s). Your override classifications will be re-applied automatically.');
+    };
+    document.getElementById('restore-no').onclick=()=>document.getElementById('restore-banner').style.display='none';
+  }catch(e){}
+}
+
+function applySessionOverrides(fileName,results){
+  try{
+    const raw=localStorage.getItem(SESSION_KEY);if(!raw) return;
+    const saved=JSON.parse(raw);const entry=saved[fileName];if(!entry) return;
+    entry.overrides.forEach((ov,i)=>{if(results[i]&&ov) results[i].override=ov;});
+  }catch(e){}
+}
+
+// Patch processFile to apply saved overrides
+const _origHandleFiles=handleFiles;
+async function handleFiles(fileList){
+  clearError();
+  const pptxFiles=fileList.filter(f=>f.name.endsWith('.pptx'));
+  if(!pptxFiles.length){showError('Please upload .pptx files only.');return;}
+  document.getElementById('global-toolbar').style.display='flex';
+  tabsBar.style.display='flex';
+  for(const file of pptxFiles){
+    if(files[file.name]){activateTab(file.name);continue;}
+    addLoadingTab(file.name);
+    try{
+      const data=await processFile(file);
+      applySessionOverrides(file.name,data.results);
+      files[file.name]=data;
+      buildTab(file.name);
+      activateTab(file.name);
+    }catch(e){
+      showError('Could not process '+file.name+': '+e.message);
+      removeTab(file.name);
+    }
+  }
+}
+
+// ── Exports ────────────────────────────────────────────────────────────────
+function exportPDF(sid){document.getElementById('pmeta-'+sid).style.display='block';window.print();}
+
+async function exportDocx(data,sid){
+  const btn=document.getElementById('docx-'+sid);btn.textContent='Building…';btn.disabled=true;
+  try{
+    // Load docx via script tag and wait for window.docx to be available
+    await new Promise((resolve,reject)=>{
+      const existing=document.getElementById('docx-script');
+      if(existing && window.docx){resolve();return;}
+      const s=document.createElement('script');
+      s.id='docx-script';
+      s.src='https://cdn.jsdelivr.net/npm/docx@8.5.0/build/index.js';
+      s.onload=()=>{
+        // Give it a moment to initialise
+        setTimeout(()=>{
+          if(window.docx) resolve();
+          else reject(new Error('docx library did not initialise — check your internet connection'));
+        },300);
+      };
+      s.onerror=()=>reject(new Error('Could not load docx library — check your internet connection'));
+      document.head.appendChild(s);
+    });
+    const{Document,Packer,Paragraph,TextRun,ImageRun,Table,TableRow,TableCell,WidthType,HeadingLevel,AlignmentType,ShadingType}=window.docx;
+    const DATE_STR=new Date(data.processedAt).toLocaleDateString('en-US',{year:'numeric',month:'long',day:'numeric'});
+    const STATUS_COLORS={ok:'375623',warn:'7B3F00',bad:'7B0000'};
+    const STATUS_SHADING={ok:'E2EFDA',warn:'FFF2CC',bad:'FCE4D6'};
+    const STATUS_LABELS={ok:'Cleared',warn:'Needs Review',bad:'Replace Required'};
+    const ok=data.results.filter(r=>effectiveStatus(r)==='ok').length;
+    const warn=data.results.filter(r=>effectiveStatus(r)==='warn').length;
+    const bad=data.results.filter(r=>effectiveStatus(r)==='bad').length;
+    const ov=data.results.filter(r=>r.override).length;
+    const children=[];
+
+    // Cover page
+    children.push(new Paragraph({text:'Image Copyright Report',heading:HeadingLevel.TITLE}));
+    children.push(new Paragraph({children:[new TextRun({text:'File: ',bold:true,size:22}),new TextRun({text:data.fileName,size:22})]}));
+    children.push(new Paragraph({children:[new TextRun({text:'Generated: '+DATE_STR,size:20,color:'666666'})]}));
+    children.push(new Paragraph({text:''}));
+
+    // Summary table
+    children.push(new Paragraph({text:'Summary',heading:HeadingLevel.HEADING_2}));
+    children.push(new Table({width:{size:5000,type:WidthType.DXA},columnWidths:[3500,1500],rows:[
+      ['Total Images',String(data.results.length),''],
+      ['Cleared',String(ok),'E2EFDA'],
+      ['Needs Review',String(warn),'FFF2CC'],
+      ['Replace Required',String(bad),'FCE4D6'],
+      ['Manually Overridden',String(ov),'DAE8FC'],
+      ['Skipped (decorative / master)',String(data.skipped.length),'F5F5F5'],
+    ].map(([label,val,shade])=>new TableRow({children:[
+      new TableCell({width:{size:3500,type:WidthType.DXA},shading:shade?{type:ShadingType.CLEAR,color:'auto',fill:shade}:undefined,children:[new Paragraph({children:[new TextRun({text:label,size:20})]})] }),
+      new TableCell({width:{size:1500,type:WidthType.DXA},shading:shade?{type:ShadingType.CLEAR,color:'auto',fill:shade}:undefined,children:[new Paragraph({children:[new TextRun({text:val,bold:true,size:20})],alignment:AlignmentType.CENTER})] }),
+    ]}))}));
+    children.push(new Paragraph({text:''}));
+    children.push(new Paragraph({text:'Image Details',heading:HeadingLevel.HEADING_2}));
+
+    let lastSlide=null;
+    for(const r of data.results){
+      const es=effectiveStatus(r);const conf=scoreConfidence(r);
+      if(r.slide!==lastSlide){children.push(new Paragraph({text:r.slide==='?'?'Slide: unknown':'Slide '+r.slide,heading:HeadingLevel.HEADING_3}));lastSlide=r.slide;}
+      let imgRun=null;
+      try{const resp=await fetch(r.dataUrl);const buf=await resp.arrayBuffer();const ext=r.name.split('.').pop().toLowerCase();const typeMap={jpg:'jpg',jpeg:'jpg',png:'png',gif:'gif',bmp:'bmp'};imgRun=new ImageRun({data:buf,transformation:{width:100,height:75},type:typeMap[ext]||'png'});}catch(e){}
+      const ll=r.override?OVERRIDE_LABELS[r.override]:r.license;
+      const shade=STATUS_SHADING[es],color=STATUS_COLORS[es];
+      const confLabel=conf.level.charAt(0).toUpperCase()+conf.level.slice(1)+' confidence';
+      const metaParas=[
+        new Paragraph({children:[new TextRun({text:r.name,bold:true,size:20})]}),
+        new Paragraph({children:[new TextRun({text:'Slide '+r.slide+'  ·  '+r.sizeKb+' KB',size:18,color:'666666'})]}),
+        new Paragraph({children:[new TextRun({text:STATUS_LABELS[es]+'  ',bold:true,size:18,color}),new TextRun({text:ll+'  ',size:18,color:'444444'}),new TextRun({text:'['+confLabel+']',size:16,color:'888888'})]}),
+        ...r.reasons.map(x=>new Paragraph({children:[new TextRun({text:'• '+x,size:16,color:'555555'})]})),
+        new Paragraph({children:[new TextRun({text:'Confidence: '+conf.reason,size:15,italics:true,color:'888888'})]}),
+        ...(r.altText?[new Paragraph({children:[new TextRun({text:'Alt text: "'+r.altText.slice(0,100)+'"',size:15,italics:true,color:'888888'})]})]: []),
+      ];
+      if(es==='ok'){metaParas.push(new Paragraph({children:[new TextRun({text:'Attribution: '+buildAttributionText(r),size:16,italics:true,color:'3b6d11'})]}));}
+      if(es!=='ok'){metaParas.push(new Paragraph({children:[new TextRun({text:'Wikimedia search: "'+r.wikiQuery+'"',size:16,color:'185FA5'})]}));metaParas.push(new Paragraph({children:[new TextRun({text:r.wikiUrl,size:15,color:'185FA5'})]}));}
+      children.push(new Table({width:{size:9240,type:WidthType.DXA},columnWidths:[1500,7740],rows:[new TableRow({children:[
+        new TableCell({width:{size:1500,type:WidthType.DXA},shading:{type:ShadingType.CLEAR,color:'auto',fill:shade},children:imgRun?[new Paragraph({children:[imgRun]})]:[new Paragraph({children:[new TextRun({text:'(no preview)',size:16,color:'999999'})]})]  }),
+        new TableCell({width:{size:7740,type:WidthType.DXA},shading:{type:ShadingType.CLEAR,color:'auto',fill:shade},children:metaParas}),
+      ]})]}));
+      children.push(new Paragraph({text:''}));
+    }
+    const blob=await Packer.toBlob(new Document({sections:[{children}]}));
+    const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=data.fileName.replace(/\.pptx$/i,'')+'-copyright-report.docx';a.click();URL.revokeObjectURL(url);
+  }catch(e){alert('Word export failed: '+e.message);}
+  btn.textContent='Export Word (.docx)';btn.disabled=false;
+}
+
+function loadScript(src){return new Promise((resolve,reject)=>{if(document.querySelector('script[src="'+src+'"]')){resolve();return;}const s=document.createElement('script');s.src=src;s.onload=resolve;s.onerror=reject;document.head.appendChild(s);});}
+function buildCSV(data){
+  const rows=[['Image filename','Slide','Size (KB)','Alt text','Status','Confidence','Override','License','Reason','Attribution','Wikimedia search','Wikimedia URL']];
+  data.results.forEach(r=>{const conf=scoreConfidence(r);const attr=effectiveStatus(r)==='ok'?buildAttributionText(r):'';rows.push([r.name,r.slide,r.sizeKb,r.altText||'',r.status,conf.level,r.override||'',r.license,r.reasons.join(' | '),attr,r.wikiQuery,r.wikiUrl]);});
+  return rows.map(r=>r.map(v=>`"${String(v).replace(/"/g,'""')}"`).join(',')).join('\n');
+}
+function buildJSON(data){return JSON.stringify(data.results.map(({dataUrl,...rest})=>rest),null,2);}
+function copyText(text,btnId){navigator.clipboard.writeText(text).then(()=>{const b=document.getElementById(btnId);if(b){b.textContent='Copied!';setTimeout(()=>b.textContent='Copy to clipboard',2000);}});}
+
+// ── Init ───────────────────────────────────────────────────────────────────
+checkForSavedSession();
+</script>
+</body>
+</html>
